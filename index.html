@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#2a1f15">
 <title>領土戦記 — Territory War</title>
 <meta name="description" content="古地図の上でNPCの国々が領土を奪い合う様子を眺める放置観戦ゲーム">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,6 +23,7 @@
       <button data-speed="2" title="x2 (3)">2</button>
       <button data-speed="3" title="x4 (4)">4</button>
       <button data-speed="4" title="x8 (5)">8</button>
+      <button id="btn-speed" title="速度を切り替え">x1</button>
     </div>
     <div class="spacer"></div>
     <div class="group">
@@ -37,6 +39,12 @@
     <canvas id="map"></canvas>
     <div id="tooltip" hidden></div>
     <div id="toasts"></div>
+
+    <div id="zoomctl">
+      <button id="z-in" title="拡大 (+)">＋</button>
+      <button id="z-out" title="縮小 (-)">－</button>
+      <button id="z-fit" title="全体を表示">⤢</button>
+    </div>
 
     <div id="godbar" class="paper">
       <div class="title">神の手</div>

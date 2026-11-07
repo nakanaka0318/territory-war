@@ -186,28 +186,105 @@ ul.help { padding-left: 20px; line-height: 1.7; font-size: 14px; }
 #loading[hidden] { display: none; }
 #loading .paper { padding: 18px 30px; font-size: 18px; font-weight: 700; }
 
-/* ---------- mobile ---------- */
-@media (max-width: 760px) {
-  #topbar { gap: 6px; padding: 5px 8px; }
-  .brand { font-size: 17px; }
-  .brand small, #topbar .lbl { display: none; }
-  #date { font-size: 15px; min-width: 0; }
-  #topbar button { padding: 4px 7px; min-width: 30px; }
-  #panel { top: auto; left: 8px; right: 8px; width: auto; height: 42%; bottom: 8px; }
-  #godbar { bottom: calc(42% + 18px); left: 8px; padding: 4px; }
-  #godbar button { min-width: 38px; font-size: 17px; padding: 3px 4px; }
+/* ---------- zoom ---------- */
+#zoomctl { position: absolute; left: 12px; top: 12px; z-index: 4; display: flex; flex-direction: column; gap: 4px; }
+#zoomctl button {
+  width: 34px; height: 34px; font-size: 17px; font-weight: 700; cursor: pointer; color: var(--ink);
+  background: rgba(239, 226, 194, 0.92); border: 1px solid #7a5d3c; border-radius: 4px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); padding: 0;
+}
+#zoomctl button:active { background: #c9a35f; }
+#btn-speed { display: none; }
+#app { padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
+
+/* ---------- スマホ縦画面 ---------- */
+@media (max-width: 760px) and (orientation: portrait) {
+  #topbar { flex-wrap: nowrap; gap: 4px; padding: 4px 6px; min-height: 42px; }
+  .brand, #topbar .lbl { display: none; }
+  #date { font-size: 14px; min-width: 0; white-space: nowrap; }
+  #speed [data-speed] { display: none; }
+  #btn-speed { display: inline-block; min-width: 38px !important; }
+  #topbar button { min-width: 30px; padding: 4px 6px; font-size: 14px; }
+  #topbar .group { gap: 3px; }
+  #panel {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 46%;
+    border-radius: 12px 12px 0 0; padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.45); border-bottom: none;
+  }
+  #panel::before { content: ''; display: block; width: 40px; height: 4px; border-radius: 2px; background: rgba(62, 44, 28, 0.35); margin: 6px auto 0; }
+  body.panel-hidden #panel { display: flex; height: auto; }
+  body.panel-hidden #panel .pane { display: none; }
+  body.panel-hidden #panel .tabs button.on { border-bottom-color: transparent; color: var(--ink2); }
+  .tabs button { padding: 8px 2px 10px; font-size: 14px; }
+  .pane { padding: 8px 10px; }
+  #godbar { left: 6px; bottom: calc(46% + 8px); padding: 3px; gap: 2px; }
+  body.panel-hidden #godbar { bottom: calc(58px + env(safe-area-inset-bottom)); }
   #godbar .title { display: none; }
+  #godbar button { min-width: 42px; font-size: 18px; padding: 3px 2px; }
+  #godbar button span { font-size: 10px; }
   #compass { display: none; }
-  body.panel-hidden #godbar { bottom: 10px; }
-  #editorbar { bottom: 8px; padding: 6px; }
-  .toast { font-size: 12px; padding: 5px 10px; }
+  #zoomctl { left: 6px; top: 6px; }
+  #zoomctl button { width: 32px; height: 32px; }
+  #toasts { top: 6px; left: calc(50% + 20px); width: calc(100% - 56px); }
+  .toast { font-size: 12px; padding: 5px 6px 5px 8px; gap: 6px; }
   .toast:nth-last-child(n+3) { display: none; }
-  #editorbar button { padding: 3px 6px; font-size: 12px; }
+  .toast .msg { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: left; }
+  .toast .goto { padding: 4px 8px; font-size: 14px; }
+  .toast .goto .t { display: none; }
+  #e-start, #e-close { order: -1; }
+  #editorbar {
+    left: 0; right: 0; bottom: 0; transform: none; max-width: none; border-radius: 12px 12px 0 0;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); gap: 5px;
+  }
+  #editorbar .row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  #editorbar .row::-webkit-scrollbar { display: none; }
+  #editorbar button { padding: 5px 8px; font-size: 12px; flex: none; }
+  #editorbar .title { display: none; }
+  .slider { flex: none; }
+  .slider input { width: 70px; }
+  #e-info { flex: none; white-space: nowrap; }
+  .dialog { padding: 14px 16px; }
 }
 
-@media (max-width: 520px) {
-  .brand { display: none; }
-  #topbar { gap: 4px; }
-  #topbar button { min-width: 28px; padding: 3px 6px; font-size: 13px; }
-  #topbar .spacer { display: none; }
+/* ---------- スマホ横画面 ---------- */
+@media (max-height: 520px) and (orientation: landscape) {
+  #topbar { flex-wrap: nowrap; min-height: 38px; padding: 3px 8px; gap: 6px; }
+  .brand { font-size: 16px; }
+  .brand small, #topbar .lbl { display: none; }
+  #date { font-size: 14px; min-width: 0; white-space: nowrap; }
+  #topbar button { padding: 3px 8px; font-size: 13px; min-width: 28px; }
+  #panel { top: 6px; bottom: 6px; right: 6px; width: min(300px, 40vw); }
+  .tabs button { padding: 6px 2px; font-size: 13px; }
+  .pane { padding: 6px 8px; }
+  #ranking li { padding: 3px 2px; }
+  #detail h3 { font-size: 17px; }
+  #godbar { flex-direction: column; left: 6px; top: 6px; bottom: auto; padding: 3px; gap: 1px; }
+  #godbar .title { display: none; }
+  #godbar button { min-width: 40px; font-size: 16px; padding: 2px; }
+  #godbar button span { font-size: 9px; }
+  #zoomctl { left: 56px; top: auto; bottom: 6px; flex-direction: row; }
+  #zoomctl button { width: 32px; height: 32px; }
+  #compass { display: none; }
+  #toasts { top: 4px; width: min(520px, 56vw); }
+  .toast { font-size: 12px; padding: 3px 6px 3px 8px; gap: 6px; }
+  .toast:nth-last-child(n+2) { display: none; }
+  .toast .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  .toast .goto { padding: 2px 8px; font-size: 13px; }
+  .toast .goto .t { display: none; }
+  #e-start, #e-close { order: -1; }
+  #editorbar { bottom: 4px; padding: 4px 6px; gap: 3px; max-width: calc(100% - 12px); }
+  #editorbar .row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  #editorbar .row::-webkit-scrollbar { display: none; }
+  #editorbar button { padding: 3px 7px; font-size: 12px; flex: none; }
+  #editorbar .title { display: none; }
+  .slider { flex: none; font-size: 12px; }
+  #e-info { flex: none; white-space: nowrap; font-size: 11px; }
+  body.editing #zoomctl { bottom: auto; top: 6px; left: 6px; }
+  .dialog { max-height: 94vh; padding: 10px 16px; }
+  .dialog h2 { font-size: 18px; margin-bottom: 8px; }
+  .field { margin-bottom: 8px; }
+}
+
+/* PC: 通知をパネルを除いた地図の中央に */
+@media (min-width: 761px) and (min-height: 521px) {
+  body:not(.panel-hidden):not(.editing) #toasts { left: calc(50% - 172px); width: min(620px, calc(100% - 420px)); }
 }

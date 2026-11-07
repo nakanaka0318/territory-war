@@ -30,7 +30,7 @@
       this.cw = Math.max(1, r.width); this.ch = Math.max(1, r.height);
       this.cv.width = Math.round(this.cw * this.dpr);
       this.cv.height = Math.round(this.ch * this.dpr);
-      this.ui = this.cw < 600 ? 0.72 : 1;
+      this.ui = Math.min(this.cw, this.ch) < 500 ? 0.75 : 1;
     }
 
     setDims(W, H) {
@@ -40,11 +40,11 @@
     }
 
     fit() {
-      const pr = this.padRight || 0, pb = this.padBottom || 0;
-      const aw = Math.max(200, this.cw - pr), ah = Math.max(150, this.ch - pb);
+      const pr = this.padRight || 0, pb = this.padBottom || 0, pl = this.padLeft || 0, pt = this.padTop || 0;
+      const aw = Math.max(160, this.cw - pr - pl), ah = Math.max(120, this.ch - pb - pt);
       let z = Math.min(aw / this.WW, ah / this.WH) * 0.98;
-      if (ah > aw * 1.2) z = Math.max(z, Math.min(ah * 0.62 / this.WH, z * 2.2)); // 縦長画面では少し拡大
-      this.cam = { x: this.WW / 2 + pr / 2 / z, y: this.WH / 2 + pb / 2 / z, z };
+      if (ah > aw * 1.2) z = Math.max(z, Math.min(ah * 0.8 / this.WH, z * 2.2)); // 縦長画面では少し拡大
+      this.cam = { x: this.WW / 2 + (pr - pl) / 2 / z, y: this.WH / 2 + (pb - pt) / 2 / z, z };
       this.minZ = Math.min(this.cw / this.WW, this.ch / this.WH) * 0.6; this.maxZ = 40 / this.S;
     }
 

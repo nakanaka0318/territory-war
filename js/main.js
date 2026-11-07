@@ -118,7 +118,7 @@
     if (ev && ev.x != null) {
       const b = document.createElement('button');
       b.className = 'goto';
-      b.textContent = '📍 移動';
+      b.innerHTML = '📍<span class="t"> 移動</span>';
       b.title = 'その場所へ移動';
       b.addEventListener('click', () => { gotoEvent(ev); d.classList.add('out'); setTimeout(() => d.remove(), 600); });
       d.appendChild(b);
@@ -136,7 +136,17 @@
 
   // ---------- パネル ----------
   let activeTab = 'rank';
-  $$('.tabs button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  const COMPACT_MQ = window.matchMedia('(max-width: 760px) and (orientation: portrait), (max-height: 520px) and (orientation: landscape)');
+  const PORTRAIT_MQ = window.matchMedia('(max-width: 760px) and (orientation: portrait)');
+  const isCompact = () => COMPACT_MQ.matches;
+  $$('.tabs button').forEach(b => b.addEventListener('click', () => {
+    // スマホ縦画面: 開いているタブをもう一度押すとシートを閉じる
+    if (PORTRAIT_MQ.matches && b.dataset.tab === activeTab && !document.body.classList.contains('panel-hidden')) {
+      document.body.classList.add('panel-hidden');
+      return;
+    }
+    setTab(b.dataset.tab);
+  }));
   function setTab(tab) {
     activeTab = tab;
     $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -154,11 +164,24 @@
 
   let lastPanel = 0;
   // パネルに隠れない位置に地図を合わせる
+  // 画面上のパネル類の位置から、地図が隠れない余白を計算する
   function updateFitPadding() {
-    const hidden = document.body.classList.contains('panel-hidden') || app.editing;
-    const mobile = window.innerWidth < 760;
-    R.padRight = hidden || mobile ? 0 : 345;
-    R.padBottom = mobile && !hidden ? R.ch * 0.42 : 0;
+    const st = $('#stage').getBoundingClientRect();
+    let pl = 0, pr = 0, pt = 0, pb = 0;
+    for (const el of [$('#panel'), $('#editorbar'), $('#godbar')]) {
+      if (!el || el.hidden) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const cx = (r.left + r.right) / 2 - st.left, cy = (r.top + r.bottom) / 2 - st.top;
+      if (r.width > st.width * 0.6) {
+        if (cy > st.height / 2) pb = Math.max(pb, st.bottom - r.top); else pt = Math.max(pt, r.bottom - st.top);
+      } else if (r.height > st.height * 0.45) {
+        if (cx > st.width / 2) pr = Math.max(pr, st.right - r.left + 4); else pl = Math.max(pl, r.right - st.left + 4);
+      }
+    }
+    // 縦画面で閉じたシート(タブだけ)の上に神の手があるので、その分も下に空ける
+    if (PORTRAIT_MQ.matches && !app.editing) pb = Math.max(pb, st.bottom - $('#godbar').getBoundingClientRect().top + 4);
+    R.padLeft = pl; R.padRight = pr; R.padTop = pt; R.padBottom = pb;
   }
   function refit() { updateFitPadding(); R.fit(); }
 
@@ -316,8 +339,13 @@
   function setSpeed(k) {
     app.speed = k;
     $$('#speed [data-speed]').forEach(b => b.classList.toggle('on', +b.dataset.speed === k));
+    $('#btn-speed').textContent = 'x' + ['½', '1', '2', '4', '8'][k];
     setPaused(false);
   }
+  $('#btn-speed').addEventListener('click', () => setSpeed((app.speed + 1) % SPEEDS.length));
+  $('#z-in').addEventListener('click', () => R.zoomAt(R.cw / 2, R.ch / 2, 1.4));
+  $('#z-out').addEventListener('click', () => R.zoomAt(R.cw / 2, R.ch / 2, 1 / 1.4));
+  $('#z-fit').addEventListener('click', () => refit());
   $('#btn-play').addEventListener('click', () => setPaused(!app.paused));
   $$('#speed [data-speed]').forEach(b => b.addEventListener('click', () => setSpeed(+b.dataset.speed)));
   $('#btn-panel').addEventListener('click', () => { document.body.classList.toggle('panel-hidden'); });
@@ -551,7 +579,7 @@
       return;
     }
     const paintTool = app.editing && (editor.tool === 'land' || editor.tool === 'sea') && e.button === 0 && !spaceHeld;
-    drag = { sx: e.offsetX, sy: e.offsetY, lx: e.offsetX, ly: e.offsetY, moved: false, paint: paintTool };
+    drag = { sx: e.offsetX, sy: e.offsetY, lx: e.offsetX, ly: e.offsetY, moved: false, paint: paintTool, touch: e.pointerType !== 'mouse' };
     if (paintTool) {
       editor.pushUndo();
       const c = R.screenToCell(e.offsetX, e.offsetY);
@@ -587,14 +615,22 @@
     if (pointers.size < 2) pinch = null;
     if (drag && pointers.size === 0) {
       if (drag.paint) { editor.endStroke(); syncEditorUI(); }
-      else if (!drag.moved && e.type === 'pointerup') handleClick(e.offsetX, e.offsetY);
+      else if (!drag.moved && e.type === 'pointerup') {
+        handleClick(e.offsetX, e.offsetY);
+        // タッチ操作ではタップした場所の情報を数秒表示
+        if (drag.touch && !app.editing && app.tool === 'look') {
+          updateTooltip(e.offsetX, e.offsetY);
+          clearTimeout(app.tipTimer);
+          app.tipTimer = setTimeout(() => { $('#tooltip').hidden = true; }, 3000);
+        }
+      } else if (drag.moved && drag.touch) $('#tooltip').hidden = true;
       drag = null;
       canvas.classList.remove('dragging');
     }
   };
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
-  canvas.addEventListener('pointerleave', () => { R.mouse = null; $('#tooltip').hidden = true; });
+  canvas.addEventListener('pointerleave', e => { R.mouse = null; if (e.pointerType === 'mouse') $('#tooltip').hidden = true; });
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     R.zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
@@ -650,11 +686,22 @@
     tip.style.top = Math.min(sy + 14, r.height - tip.offsetHeight - 6) + 'px';
   }
 
-  window.addEventListener('resize', () => {
+  let lastLayout = '';
+  const layoutKey = () => (isCompact() ? 'c' : 'd') + (window.innerWidth > window.innerHeight ? 'L' : 'P');
+  function onResize() {
     const z = R.cam.z;
     R.resize();
-    if (R.WW) { R.minZ = Math.min(R.cw / R.WW, R.ch / R.WH) * 0.6; R.cam.z = z; R.clampCam(); }
-  });
+    if (!R.WW) return;
+    const key = layoutKey();
+    if (key !== lastLayout) {
+      // 画面の向きやレイアウトが変わったら地図を合わせ直す
+      if (lastLayout && isCompact()) document.body.classList.add('panel-hidden');
+      lastLayout = key;
+      requestAnimationFrame(() => { R.resize(); refit(); });
+    } else { R.minZ = Math.min(R.cw / R.WW, R.ch / R.WH) * 0.6; R.cam.z = z; R.clampCam(); }
+  }
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
 
   // ---------- ループ ----------
   let lastT = performance.now();
@@ -686,7 +733,8 @@
   }
   const init = parseHash();
   app.settings.nations = init.nations;
-  if (window.innerWidth < 760) document.body.classList.add('panel-hidden');
+  if (isCompact()) document.body.classList.add('panel-hidden');
+  lastLayout = layoutKey();
   const go = () => { startWorld(init); requestAnimationFrame(loop); };
   if (document.fonts && document.fonts.ready) {
     Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]).then(go);
