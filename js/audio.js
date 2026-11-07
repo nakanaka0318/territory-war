@@ -4,7 +4,9 @@ TW.Audio = (function () {
   let ctx = null, master = null;
   let enabled = true;
   const last = {};
-  const minGap = { battle: 500, capture: 300, war: 600, peace: 600, alliance: 600, capital: 800, destroy: 800, rebel: 700, betray: 800 };
+  const minGap = { battle: 1500, capture: 900, war: 1200, peace: 1200, alliance: 1200, capital: 1500, destroy: 1500, rebel: 1200, betray: 1500, develop: 2500, culture: 1500 };
+  const PRIORITY = { destroy: 5, capital: 5, rebel: 4, betray: 4, war: 3, culture: 3, peace: 2, alliance: 2, capture: 1, battle: 1, develop: 0 };
+  let lastAny = 0;
   try { const v = localStorage.getItem('tw-sound'); if (v === '0') enabled = false; } catch (e) { /* noop */ }
 
   function ensure() {
@@ -13,7 +15,7 @@ TW.Audio = (function () {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return false;
       ctx = new AC();
-      master = ctx.createGain(); master.gain.value = 0.28; master.connect(ctx.destination);
+      master = ctx.createGain(); master.gain.value = 0.35; master.connect(ctx.destination);
     }
     if (ctx.state === 'suspended') ctx.resume();
     return true;
@@ -49,20 +51,42 @@ TW.Audio = (function () {
     src.connect(f); f.connect(g); g.connect(master);
     src.start(t0); src.stop(t0 + dur + 0.05);
   }
+  // 協和する音だけで構成 (ハ長調ペンタトニック: ド レ ミ ソ ラ)
+  const N = { C2: 65.41, G2: 98, C3: 130.81, E3: 164.81, G3: 196, A3: 220, C4: 261.63, D4: 293.66, E4: 329.63, G4: 392, A4: 440, C5: 523.25, D5: 587.33, E5: 659.25, G5: 783.99, A5: 880, C6: 1046.5 };
+  // 柔らかいベル/木琴風の音 (基音 + 弱い倍音)
+  function bell(f, dur, gain, delay = 0) {
+    tone(f, dur, { type: 'sine', gain, attack: 0.008, delay });
+    tone(f * 2, dur * 0.5, { type: 'sine', gain: gain * 0.25, attack: 0.008, delay });
+  }
+  function pad(f, dur, gain, delay = 0) {
+    tone(f, dur, { type: 'triangle', gain, attack: Math.min(0.25, dur * 0.3), delay, filter: 1400 });
+  }
   const sounds = {
-    war() { tone(196, 0.8, { type: 'sawtooth', gain: 0.25, attack: 0.08, filter: 900 }); tone(294, 0.8, { type: 'sawtooth', gain: 0.18, attack: 0.1, filter: 900, delay: 0.05 }); noise(0.3, { gain: 0.2, freq: 300 }); },
-    peace() { tone(660, 0.6, { gain: 0.2 }); tone(880, 0.9, { gain: 0.18, delay: 0.18 }); },
-    alliance() { tone(523, 0.7, { gain: 0.18 }); tone(659, 0.7, { gain: 0.15 }); },
-    capture() { noise(0.18, { gain: 0.45, freq: 500 }); tone(110, 0.3, { gain: 0.45, freqEnd: 50 }); },
-    capital() { tone(98, 2.2, { gain: 0.45, attack: 0.005 }); tone(147, 1.8, { gain: 0.2 }); tone(233, 1.2, { gain: 0.1 }); noise(0.4, { gain: 0.25, freq: 250 }); },
-    destroy() { tone(73, 2.6, { gain: 0.5 }); tone(110, 2.2, { gain: 0.2 }); tone(155, 1.5, { gain: 0.08 }); },
-    battle() { noise(0.12, { gain: 0.35, type: 'highpass', freq: 2000 }); tone(1800, 0.15, { type: 'triangle', gain: 0.12, freqEnd: 1200 }); noise(0.1, { gain: 0.25, type: 'highpass', freq: 2500, delay: 0.12 }); },
-    rebel() { tone(220, 0.5, { type: 'sawtooth', gain: 0.2, freqEnd: 440, filter: 1200 }); noise(0.4, { gain: 0.2, freq: 600 }); },
-    betray() { tone(311, 0.6, { type: 'square', gain: 0.1, filter: 1000 }); tone(293, 0.8, { type: 'square', gain: 0.1, filter: 1000, delay: 0.2 }); },
-    plague() { noise(1.4, { gain: 0.3, freq: 300, attack: 0.5 }); tone(70, 1.4, { gain: 0.2, attack: 0.4 }); },
-    disaster() { noise(1.8, { gain: 0.55, freq: 140, attack: 0.05 }); tone(45, 1.6, { gain: 0.4, freqEnd: 30 }); },
-    bless() { [523, 659, 784, 1046].forEach((f, k) => tone(f, 0.8, { gain: 0.15, delay: k * 0.09 })); },
-    click() { tone(800, 0.06, { gain: 0.08 }); },
+    // 宣戦: ソ→ド の角笛風 (完全4度)
+    war() { pad(N.G3, 0.5, 0.16); pad(N.C4, 0.9, 0.16, 0.22); pad(N.G3, 0.9, 0.08, 0.22); },
+    // 停戦: ミ→ソ→ド の上行
+    peace() { bell(N.E5, 0.7, 0.08); bell(N.G5, 0.7, 0.07, 0.15); bell(N.C6, 1.1, 0.06, 0.3); },
+    // 同盟: ド・ミ・ソ の和音
+    alliance() { bell(N.C5, 1.0, 0.06); bell(N.E5, 1.0, 0.05, 0.04); bell(N.G5, 1.0, 0.045, 0.08); },
+    // 占領: 低い太鼓 + ソ
+    capture() { tone(N.C3, 0.28, { gain: 0.22, freqEnd: N.C2 }); noise(0.08, { gain: 0.05, freq: 400 }); bell(N.G4, 0.35, 0.05, 0.05); },
+    // 首都陥落: 低いド+ソ+ド の鐘 (オクターブと5度)
+    capital() { bell(N.C3, 2.0, 0.16); bell(N.G3, 1.8, 0.09, 0.02); bell(N.C4, 1.5, 0.06, 0.04); },
+    // 滅亡: さらに低い鐘をゆっくり2回
+    destroy() { bell(N.C3, 2.2, 0.15); bell(N.G2, 2.6, 0.13, 0.55); },
+    // 会戦: 木を打つような短い音
+    battle() { tone(N.A4, 0.09, { type: 'triangle', gain: 0.08 }); noise(0.05, { gain: 0.04, type: 'bandpass', freq: 1500 }); tone(N.E4, 0.12, { type: 'triangle', gain: 0.06, delay: 0.09 }); },
+    // 反乱: ソ→ド→ミ の上行アルペジオ
+    rebel() { pad(N.G3, 0.35, 0.12); pad(N.C4, 0.35, 0.12, 0.12); pad(N.E4, 0.7, 0.12, 0.24); },
+    // 裏切り: ラ→ミ の下行 (完全5度)
+    betray() { pad(N.A3 * 2, 0.4, 0.1); pad(N.E4, 0.9, 0.1, 0.25); },
+    // 文化の発展: ド・レ・ミ・ソ・ラ の軽い上行
+    culture() { [N.C5, N.D5, N.E5, N.G5, N.A5].forEach((f, k) => bell(f, 0.6, 0.045, k * 0.07)); },
+    develop() { bell(N.G5, 0.5, 0.035); bell(N.C6, 0.6, 0.03, 0.08); },
+    plague() { pad(N.C3, 1.6, 0.12); pad(N.G3, 1.6, 0.06, 0.1); noise(1.2, { gain: 0.04, freq: 300, attack: 0.5 }); },
+    disaster() { noise(1.4, { gain: 0.18, freq: 120, attack: 0.05 }); tone(N.C2, 1.4, { gain: 0.2 }); },
+    bless() { [N.C5, N.E5, N.G5, N.C6].forEach((f, k) => bell(f, 0.9, 0.06, k * 0.09)); },
+    click() { tone(N.G5, 0.05, { gain: 0.04 }); },
   };
   return {
     get enabled() { return enabled; },
@@ -76,7 +100,10 @@ TW.Audio = (function () {
       if (!enabled || !ctx || ctx.state !== 'running' || !sounds[name]) return;
       const now = performance.now();
       if (last[name] && now - last[name] < (minGap[name] || 150)) return;
-      last[name] = now;
+      // 音が重なって濁らないよう、直前の音から間隔を空ける (重要な音は優先)
+      const pr = PRIORITY[name] ?? 6;
+      if (now - lastAny < (pr >= 4 ? 250 : 600)) return;
+      last[name] = now; lastAny = now;
       try { sounds[name](); } catch (e) { /* noop */ }
     },
   };

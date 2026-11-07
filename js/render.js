@@ -472,6 +472,15 @@
           ctx.fillStyle = 'rgba(40,25,15,0.7)'; ctx.fillRect(x - 8 * px, y + 7 * px, 16 * px, 3 * px);
           ctx.fillStyle = 'rgb(200,60,40)'; ctx.fillRect(x - 8 * px, y + 7 * px, 16 * px * TW.clamp(c.defense / md, 0, 1), 3 * px);
         }
+        // 発展度: 城壁(4+)は外周の環、大図書館(10)は金の環
+        if (n && c.dev >= 4) {
+          const wr = (c.capital ? 8 : 5 + c.dev * 0.15) * px;
+          ctx.beginPath(); ctx.arc(x, y, wr, 0, Math.PI * 2);
+          ctx.lineWidth = (c.dev >= 10 ? 2.2 : 1.4) * px;
+          ctx.strokeStyle = c.dev >= 10 ? 'rgba(200,150,30,0.95)' : 'rgba(50,34,22,0.75)';
+          ctx.setLineDash(c.dev >= 10 ? [] : [2.2 * px, 1.4 * px]);
+          ctx.stroke(); ctx.setLineDash([]);
+        }
         if (c.capital && n) {
           const r = 5.5 * px;
           ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -484,7 +493,7 @@
           }
           ctx.closePath(); ctx.fillStyle = 'rgb(255,246,215)'; ctx.fill();
         } else {
-          const r = (c.pop > 6 ? 3.4 : 2.6) * px;
+          const r = (2.3 + Math.min(10, c.dev) * 0.17 + (c.pop > 6 ? 0.5 : 0)) * px;
           ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
           ctx.fillStyle = n ? 'rgb(248,238,212)' : 'rgba(230,220,195,0.8)'; ctx.fill();
           ctx.lineWidth = 1.3 * px; ctx.strokeStyle = n ? 'rgb(50,34,22)' : 'rgba(80,65,50,0.6)'; ctx.stroke();

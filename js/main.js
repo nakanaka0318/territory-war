@@ -5,8 +5,8 @@
   const $$ = s => Array.from(document.querySelectorAll(s));
   const SPEEDS = [0.5, 1, 2, 4, 8];
   const TPS = 10; // x1 のときの1秒あたりティック数
-  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜' };
-  const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era']);
+  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️' };
+  const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture']);
 
   const canvas = $('#map');
   const R = new TW.Renderer(canvas);
@@ -73,10 +73,11 @@
   function onEvent(e, silent) {
     const majorish = e.major || MAJOR_TYPES.has(e.type);
     if (!silent) {
-      const snd = { war: 'war', peace: 'peace', alliance: 'alliance', capture: 'capture', capital: 'capital', destroy: 'destroy', rebel: 'rebel', betray: 'betray' }[e.type];
-      if (snd && (e.type !== 'war' || e.major || Math.random() < 0.5)) TW.Audio.play(snd);
+      const snd = { war: 'war', peace: 'peace', alliance: 'alliance', capture: 'capture', capital: 'capital', destroy: 'destroy', rebel: 'rebel', betray: 'betray', culture: 'culture', develop: 'develop' }[e.type];
+      if (snd && (e.type !== 'war' || e.major || Math.random() < 0.5) && (e.type !== 'develop' || e.major)) TW.Audio.play(snd);
       if (e.type === 'battle' && e.major) TW.Audio.play('battle');
-      if (['capital', 'destroy', 'rebel', 'betray'].includes(e.type) || (e.type === 'war' && e.major)) toast(`${ICON[e.type] || ''} ${e.text}`);
+      if (['capital', 'destroy', 'rebel', 'betray', 'war'].includes(e.type) && (e.type !== 'war' || e.major || app.sim.aliveNations().length <= 12)) toast(`${ICON[e.type] || ''} ${e.text}`, e);
+      else if ((e.type === 'culture' || e.type === 'develop') && e.major) toast(`${ICON[e.type]} ${e.text}`, e);
     }
     if ($('#log-major').checked && !majorish) return;
     addChronicle(e);
@@ -88,10 +89,7 @@
     if (e.major) li.className = 'major';
     li.innerHTML = `<span class="ic">${ICON[e.type] || '・'}</span><span><span class="yr">${e.year}年</span> ${escapeHtml(e.text)}</span>`;
     li.dataset.seq = e.seq;
-    if (e.x != null) li.addEventListener('click', () => {
-      R.centerOn(e.x, e.y, 3);
-      if (e.ns && e.ns.length) select(e.ns[0]);
-    });
+    if (e.x != null) li.addEventListener('click', () => gotoEvent(e));
     ul.prepend(li);
     while (ul.children.length > 300) ul.lastChild.remove();
   }
@@ -105,14 +103,34 @@
 
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-  function toast(text) {
+  function gotoEvent(e) {
+    R.centerOn(e.x, e.y, 7);
+    if (e.ns && e.ns.length) select(e.ns[0]);
+  }
+  function toast(text, ev) {
     const box = $('#toasts');
     const d = document.createElement('div');
     d.className = 'toast';
-    d.textContent = text;
+    const span = document.createElement('span');
+    span.className = 'msg';
+    span.textContent = text;
+    d.appendChild(span);
+    if (ev && ev.x != null) {
+      const b = document.createElement('button');
+      b.className = 'goto';
+      b.textContent = '📍 移動';
+      b.title = 'その場所へ移動';
+      b.addEventListener('click', () => { gotoEvent(ev); d.classList.add('out'); setTimeout(() => d.remove(), 600); });
+      d.appendChild(b);
+    }
     box.appendChild(d);
     while (box.children.length > 3) box.firstChild.remove();
-    setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 700); }, 4200);
+    // マウスを乗せている間は消さない
+    let hover = false;
+    d.addEventListener('pointerenter', () => { hover = true; });
+    d.addEventListener('pointerleave', () => { hover = false; });
+    const close = () => { if (hover) { setTimeout(close, 800); return; } d.classList.add('out'); setTimeout(() => d.remove(), 700); };
+    setTimeout(close, ev && ev.x != null ? 6500 : 4200);
   }
   app.toast = toast;
 
@@ -175,7 +193,7 @@
         `<span class="nm"><span class="sw" style="background:${n.css}"></span><span class="t">${escapeHtml(n.name)}</span>${tags}</span>` +
         `<span class="pc">${pct}%</span>` +
         `<span class="bar"><i style="width:${n.cells / max * 100}%;background:${n.css}"></i></span>` +
-        `<span class="sub">都市 ${n.cityCount}　兵 ${TW.fmtTroops(n.manpower + n.armyStr)}　軍団 ${n.armyCount}</span></li>`;
+        `<span class="sub">都市 ${n.cityCount}　兵 ${TW.fmtTroops(n.manpower + n.armyStr)}　軍団 ${n.armyCount}　🎭${TW.ERAS[n.era].name}</span></li>`;
     }).join('');
   }
   $('#ranking').addEventListener('click', ev => {
@@ -254,6 +272,7 @@
     rows.push(['都市 / 人口', `${n.cityCount} / ${(n.cityPop).toFixed(1)}万`]);
     rows.push(['予備兵力', TW.fmtTroops(n.manpower)]);
     rows.push(['野戦軍', `${n.armyCount}軍団 / ${TW.fmtTroops(n.armyStr)}`]);
+    rows.push(['兵の質', `×${sim.quality(n.id).toFixed(2)}`]);
     rows.push(['好戦性', '⚔'.repeat(1 + Math.round(n.aggression * 4))]);
     rows.push(['会戦 勝/敗', `${n.battlesWon} / ${n.battlesLost}`]);
     rows.push(['攻略した都市', n.citiesTaken]);
@@ -263,11 +282,25 @@
       `<div class="sub">${foundedYear}年建国${n.parentName ? `（${escapeHtml(n.parentName)}から独立）` : ''}・建国${sim.year() - foundedYear}年目</div>` +
       `<table>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>` +
       `<div class="rel"><div class="h">安定度 ${(n.stability * 100).toFixed(0)}%</div><div class="meter"><i style="width:${n.stability * 100}%"></i></div></div>` +
+      cultureBlock(sim, n) +
       relBlock('⚔️ 交戦中', lists.war) + relBlock('🤝 同盟国', lists.ally) + relBlock('🕊️ 停戦中', lists.truce) +
       (neighbors.length ? `<div class="rel"><div class="h">隣国との関係</div>${neighbors.map(({ m, op }) => natLink(m).replace('</span>', '</span>') + `<small>${op > 0 ? '+' : ''}${op.toFixed(0)}</small>`).join(' ')}</div>` : '') +
       `<div class="rel"><button class="btn" id="goto-cap">首都へ移動</button></div>` +
       `<div class="rel"><div class="h">歴史</div><ul class="ev">${evHtml || '<li>まだ記録はない</li>'}</ul></div>`;
     $('#goto-cap').onclick = () => R.centerOn(cap.x, cap.y, 4);
+  }
+  function cultureBlock(sim, n) {
+    const era = TW.ERAS[n.era], next = TW.ERAS[n.era + 1];
+    const prog = next ? TW.clamp((n.culture - era.need) / (next.need - era.need), 0, 1) : 1;
+    const cities = sim.cities.filter(c => c.owner === n.id).sort((a, b) => b.dev - a.dev);
+    const avg = cities.length ? cities.reduce((s, c) => s + c.dev, 0) / cities.length : 0;
+    const counts = TW.BUILDINGS.map(b => ({ b, k: cities.filter(c => c.dev >= b.dev).length })).filter(x => x.k > 0);
+    return `<div class="rel culture"><div class="h">🎭 文化: ${era.name}　<small>${Math.round(n.culture)}${next ? ` / ${next.need} (次: ${next.name})` : ' (最高位)'}　+${n.cultureGain.toFixed(0)}/年</small></div>` +
+      `<div class="meter culture"><i style="width:${prog * 100}%"></i></div>` +
+      `<div class="hint">時代が進むほど兵の質・収入・安定度が上がり、文化の劣る隣国の国境を少しずつ同化します。</div>` +
+      `<div class="h" style="margin-top:6px">🏗️ 発展度 平均 ${avg.toFixed(1)} / 10</div>` +
+      `<div class="blds">${counts.map(({ b, k }) => `<span class="chip" title="${b.desc}">${b.icon} ${b.name} ×${k}</span>`).join('') || '<span class="hint">施設はまだない</span>'}</div>` +
+      `<div class="devlist">${cities.slice(0, 5).map(c => `<div><span>${c.capital ? '👑' : '🏘'} ${escapeHtml(c.name)}</span><span class="devbar"><i style="width:${c.dev * 10}%"></i></span><b>${c.dev.toFixed(1)}</b></div>`).join('')}</div></div>`;
   }
   $('#detail').addEventListener('click', ev => {
     const c = ev.target.closest('.chip[data-uid]');
@@ -597,6 +630,8 @@
       for (const ct of sim.cities) { const d = Math.hypot(ct.x - c.fx + 0.5, ct.y - c.fy + 0.5); if (d < bd) { bd = d; city = ct; } }
       if (city) {
         html += `<br>${city.capital ? '👑 首都' : '🏘 都市'} <b>${escapeHtml(city.name)}</b> 人口${city.pop.toFixed(1)}万`;
+        const bl = TW.buildingsOf(city.dev);
+        html += `<br>発展度 ${city.dev.toFixed(1)} ${bl.map(b => b.icon).join('')}`;
         if (city.besieged >= sim.t - 3) html += `<br><span style="color:#a51c12">攻囲中 — 守備 ${Math.max(0, city.defense / sim.maxDefense(city) * 100).toFixed(0)}%</span>`;
       }
     } else html = t.name;
@@ -605,7 +640,7 @@
       if (Math.hypot(ax / R.S - c.fx, ay / R.S - c.fy) < 1.3) {
         const n = sim.nations[a.n];
         const mode = { attack: '進軍中', chase: '追撃中', siege: '攻囲中', home: '帰還中', idle: '待機' }[a.mode] || '';
-        html += `<br>🚩 ${escapeHtml(n.name)}軍 ${TW.fmtTroops(a.str)} ${a.fighting ? '<b style="color:#a51c12">交戦中</b>' : mode}`;
+        html += `<br>🚩 ${escapeHtml(n.name)}軍 ${TW.fmtTroops(a.str)} 質×${sim.quality(a.n).toFixed(2)} ${a.fighting ? '<b style="color:#a51c12">交戦中</b>' : mode}`;
       }
     }
     tip.innerHTML = html;

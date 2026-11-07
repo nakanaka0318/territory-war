@@ -5,6 +5,22 @@
   const TPY = TW.TPY = 48;          // 1年あたりのティック数
   const MAXN = TW.MAXN = 64;        // 同時に存在できる国の最大数(ID)
   const MAX_ALIVE = 44;
+  // 文化の時代と到達に必要な文化点
+  const ERAS = TW.ERAS = [
+    { name: '草創期', need: 0 }, { name: '部族期', need: 60 }, { name: '王権期', need: 180 }, { name: '古典期', need: 400 },
+    { name: '黄金期', need: 750 }, { name: '学芸期', need: 1250 }, { name: '啓蒙期', need: 1950 }, { name: '栄華期', need: 2900 },
+  ];
+  // 都市の発展度で建つ施設
+  const BUILDINGS = TW.BUILDINGS = [
+    { dev: 1, name: '農地', icon: '🌾', desc: '人口増加' },
+    { dev: 2, name: '市場', icon: '⚖️', desc: '兵力収入' },
+    { dev: 4, name: '城壁', icon: '🧱', desc: '守備力+40%' },
+    { dev: 6, name: '学院', icon: '📜', desc: '文化点' },
+    { dev: 8, name: '大聖堂', icon: '⛪', desc: '安定・反乱抑止' },
+    { dev: 10, name: '大図書館', icon: '🏛️', desc: '大きな文化点' },
+  ];
+  TW.buildingsOf = dev => BUILDINGS.filter(b => dev >= b.dev);
+  TW.eraOf = culture => { let e = 0; for (let k = 0; k < ERAS.length; k++) if (culture >= ERAS[k].need) e = k; return e; };
 
   class Sim {
     constructor(world, opts = {}) {
@@ -48,6 +64,7 @@
         id: k, x: s.x, y: s.y, i: s.i, name: s.name,
         pop: Math.min(4, s.base * (0.8 + this.rand() * 0.8)), owner: -1,
         originRoot: null, defense: 0, unrest: 0, conqueredAt: -99999, besieged: -99, capital: false,
+        dev: 0.3 + this.rand() * 0.8, built: 0,
       }));
       for (const c of this.cities) { this.cityAt[c.i] = c.id; c.defense = this.maxDefense(c); }
       this.initNations(opts.nations || 8, opts.capitals);
@@ -73,8 +90,11 @@
 
     maxDefense(c) {
       const tdef = TW.TERRAIN[this.w.terrain[c.i]].def;
-      return (8 + c.pop * 5) * (c.capital ? 1.7 : 1) * tdef * (this.w.river[c.i] ? 1.1 : 1);
+      const q = c.owner >= 0 && this.nations[c.owner] ? this.quality(c.owner) : 1;
+      return (8 + c.pop * 5) * (c.capital ? 1.7 : 1) * tdef * (this.w.river[c.i] ? 1.1 : 1) * (c.dev >= 4 ? 1.4 : 1) * q;
     }
+    // 文化の時代による兵の質
+    quality(id) { const n = this.nations[id]; return n ? 1 + n.era * 0.08 : 1; }
 
     addLog(type, text, pos, major = false, nations = []) {
       const e = {
@@ -133,6 +153,7 @@
         css: TW.rgbCss(color), dark: TW.rgbCss(TW.darken(color, 0.55)),
         alive: true, capital: city.id, cells: 0, value: 0,
         manpower: opts.manpower ?? 40, armyStr: 0, armyCount: 0, cityCount: 0, cityPop: 0,
+        culture: opts.culture || 0, era: TW.eraOf(opts.culture || 0), devSum: 0, cultureGain: 0,
         aggression: 0.15 + r() * 0.85, stability: 0.85, founded: this.t, deadAt: -1,
         wars: 0, allies: 0, strength: 0, expand: 0.8 + r() * 0.4, frontierFree: 0,
         parentName: opts.parentName || null, peakCells: 0, capitalLostAt: -99999,
@@ -172,7 +193,7 @@
           const c = {
             id: this.cities.length, x: li % W, y: (li / W) | 0, i: li,
             name: TW.Names.city(this.rand, w.usedNames), pop: 3, owner: -1, originRoot: null,
-            defense: 0, unrest: 0, conqueredAt: -99999, besieged: -99, capital: false,
+            defense: 0, unrest: 0, conqueredAt: -99999, besieged: -99, capital: false, dev: 1, built: 0,
           };
           this.cities.push(c); this.cityAt[li] = c.id;
           caps.push(c);
@@ -227,10 +248,10 @@
     updateStats() {
       for (const n of this.nations) {
         if (!n) continue;
-        n.cityCount = 0; n.cityPop = 0; n.armyStr = 0; n.armyCount = 0; n.wars = 0; n.allies = 0;
+        n.cityCount = 0; n.cityPop = 0; n.devSum = 0; n.armyStr = 0; n.armyCount = 0; n.wars = 0; n.allies = 0;
       }
       for (const c of this.cities) {
-        if (c.owner >= 0) { const n = this.nations[c.owner]; n.cityCount++; n.cityPop += c.pop; }
+        if (c.owner >= 0) { const n = this.nations[c.owner]; n.cityCount++; n.cityPop += c.pop; n.devSum += c.dev; }
         if (c.besieged < this.t - 2) { const md = this.maxDefense(c); if (c.defense < md) c.defense = Math.min(md, c.defense + md * 0.012); }
       }
       for (const a of this.armies) { const n = this.nations[a.n]; n.armyStr += a.str; n.armyCount++; }
@@ -249,7 +270,7 @@
     economy() {
       for (const n of this.nations) {
         if (!n || !n.alive) continue;
-        const inc = (n.value * 0.0035 + n.cityPop * 0.03) * (0.45 + 0.55 * n.stability);
+        const inc = (n.value * 0.0035 + n.cityPop * 0.03 + n.devSum * 0.006) * (0.45 + 0.55 * n.stability) * (1 + n.era * 0.05);
         n.manpower += inc;
         const cap = 40 + n.value * 0.45 + n.cityPop * 4;
         if (n.manpower > cap) n.manpower -= (n.manpower - cap) * 0.1;
@@ -294,6 +315,10 @@
         if (p < 0) {
           const ease = TW.TERRAIN[terr[j]].ease;
           if (r() < 0.75 * ease * n.expand * (0.5 + n.stability * 0.5)) this.colonize(j, o);
+        } else if (this.rel[o * MAXN + p] === 0) {
+          // 文化的同化: 文化の時代が2つ以上離れた隣国の国境がゆっくり塗り替わる
+          const diff = n.era - this.nations[p].era;
+          if (diff >= 2 && this.cityAt[j] < 0 && r() < 0.004 * diff) this.setOwner(j, o);
         } else if (this.rel[o * MAXN + p] === 1) {
           if (this.cityAt[j] >= 0) continue;
           const m = this.nations[p];
@@ -608,8 +633,8 @@
           const dx = a.x - b.x, dy = a.y - b.y;
           if (dx * dx + dy * dy > 2.6) continue;
           const da = this.defMod(a), db = this.defMod(b);
-          b.dmg += a.str * 0.032 * (0.6 + this.rand() * 0.8) / db;
-          a.dmg += b.str * 0.032 * (0.6 + this.rand() * 0.8) / da;
+          b.dmg += a.str * 0.032 * (0.6 + this.rand() * 0.8) * this.quality(a.n) / db;
+          a.dmg += b.str * 0.032 * (0.6 + this.rand() * 0.8) * this.quality(b.n) / da;
           if (!a.foe || a.foe.str < b.str) a.foe = b;
           if (!b.foe || b.foe.str < a.str) b.foe = a;
         }
@@ -683,7 +708,7 @@
         if (a.fighting) continue;
         const c = this.cities[a.target.id];
         c.besieged = this.t;
-        c.defense -= a.str * 0.025 * (0.5 + this.rand());
+        c.defense -= a.str * 0.025 * (0.5 + this.rand()) * this.quality(a.n);
         a.str -= 0.0035 * c.defense;
         if (c.defense <= 0) {
           this.captureCity(c, a.n);
@@ -701,6 +726,8 @@
       const nn = this.nations[n];
       this.giveCity(c, n, true);
       c.capital = false;
+      nn.culture += c.dev * 3;
+      c.dev *= 0.7; c.built = TW.buildingsOf(c.dev).length;
       c.defense = this.maxDefense(c) * 0.3;
       nn.citiesTaken++;
       // 周辺を併合
@@ -728,6 +755,7 @@
         on.stability = Math.max(0, on.stability - 0.3);
         on.capitalLostAt = this.t;
         on.manpower *= 0.7;
+        on.culture *= 0.9;
         for (const x of remaining) x.unrest = Math.min(1, x.unrest + 0.25);
         this.addLog('capital', `${on.name}の首都${c.name}が${nn.name}により陥落! ${nc.name}へ遷都`, c, true, [nn, on]);
         this.effect('capital', c.x, c.y, 6, { color: nn.css });
@@ -745,9 +773,72 @@
       }
       for (const c of this.cities) if (c.owner === n.id) { c.owner = by ? by.id : -1; c.capital = false; }
       for (let j = 0; j < MAXN; j++) { this.setRel(n.id, j, 0); this.truce[n.id * MAXN + j] = 0; this.truce[j * MAXN + n.id] = 0; }
+      if (by) by.culture += n.culture * 0.2;
       const cap = this.cities[n.capital];
       this.addLog('destroy', `${n.name}滅亡 (建国から${this.year() - Math.floor(n.founded / TPY) - 1}年)` + (by ? ` — ${by.name}に併合された` : ''), cap, true, by ? [n, by] : [n]);
       this.effect('destroy', cap.x, cap.y, 7, { color: n.css });
+    }
+
+    // 2国の国境付近の地点(なければ相手の首都)
+    frontierPoint(a, b) {
+      const w = this.w, W = w.W, H = w.H, owner = this.owner;
+      let sx = 0, sy = 0, n = 0;
+      const pts = [];
+      for (const i of w.landCells) {
+        if (owner[i] !== a.id) continue;
+        const x = i % W, y = (i / W) | 0;
+        if ((x > 0 && owner[i - 1] === b.id) || (x < W - 1 && owner[i + 1] === b.id) || (y > 0 && owner[i - W] === b.id) || (y < H - 1 && owner[i + W] === b.id)) {
+          sx += x; sy += y; n++; pts.push(i);
+        }
+      }
+      if (!n) return this.cities[b.capital];
+      const mx = sx / n, my = sy / n;
+      let best = pts[0], bd = 1e18;
+      for (const i of pts) { const d = (i % W - mx) ** 2 + (((i / W) | 0) - my) ** 2; if (d < bd) { bd = d; best = i; } }
+      return { x: best % W, y: (best / W) | 0 };
+    }
+
+    // ---------- 発展と文化 ----------
+    develop() {
+      const r = this.rand;
+      for (const c of this.cities) {
+        const n = c.owner >= 0 ? this.nations[c.owner] : null;
+        if (!n) { c.dev = Math.min(3, c.dev + 0.02 * r()); continue; }
+        let g = 0.018 + c.pop * 0.004 + n.stability * 0.025 + (this.w.river[c.i] ? 0.015 : 0) + (this.w.landDist[c.i] === 1 ? 0.015 : 0);
+        if (c.capital) g *= 1.5;
+        if (n.wars) g *= 0.5;
+        if (this.t - c.besieged < TPY) g *= 0.2;
+        g *= 1 + n.era * 0.05;
+        c.dev = Math.min(10, c.dev + g * (0.6 + r() * 0.8));
+        const nb = TW.buildingsOf(c.dev).length;
+        if (nb > c.built) {
+          const b = BUILDINGS[nb - 1];
+          if (nb >= 4) this.addLog('develop', `${n.name}の${c.name}に${b.name}が完成`, c, nb >= 6, [n]);
+          c.built = nb;
+        }
+      }
+      this.updateStats();
+      for (const n of this.aliveNations()) {
+        let wonders = 0, academies = 0;
+        for (const c of this.cities) {
+          if (c.owner !== n.id) continue;
+          if (c.dev >= 6) academies++;
+          if (c.dev >= 10) wonders++;
+        }
+        const avg = n.cityCount ? n.devSum / n.cityCount : 0;
+        const gain = (Math.sqrt(n.cityCount) * avg * 1.2 + academies * 2 + wonders * 8) * (n.wars ? 0.75 : 1);
+        n.cultureGain = gain;
+        n.culture = n.culture * 0.97 + gain;
+        const era = TW.eraOf(n.culture);
+        if (era > n.era) {
+          n.era = era;
+          this.addLog('culture', `${n.name}が文化の${ERAS[era].name}を迎えた (兵の質 ×${this.quality(n.id).toFixed(2)})`, this.cities[n.capital], era >= 3, [n]);
+          this.effect('bless', this.cities[n.capital].x, this.cities[n.capital].y, 5);
+        } else if (era < n.era) {
+          n.era = era;
+          this.addLog('culture', `${n.name}の文化が衰退し${ERAS[era].name}に戻った`, this.cities[n.capital], false, [n]);
+        }
+      }
     }
 
     // ---------- 外交 ----------
@@ -760,7 +851,7 @@
       this.warScore[a.id * MAXN + b.id] = this.warScore[b.id * MAXN + a.id] = 0;
       this.setOp(a.id, b.id, this.op(a.id, b.id) - 30);
       if (reason !== 'rebel' && reason !== 'join') {
-        this.addLog('war', `${a.name}が${b.name}に宣戦布告`, this.cities[b.capital], a.cells + b.cells > this.landCount * 0.15, [a, b]);
+        this.addLog('war', `${a.name}が${b.name}に宣戦布告`, this.frontierPoint(a, b), a.cells + b.cells > this.landCount * 0.15, [a, b]);
       }
       if (reason === 'join') return;
       // 同盟国の参戦
@@ -887,10 +978,12 @@
         const share = n.cells / L;
         let target = 0.88 - share * 0.75 - n.wars * 0.06 - (this.t - n.capitalLostAt < TPY * 5 ? 0.2 : 0);
         if (n.wars === 0) target += 0.05;
+        target += n.era * 0.015;
         n.stability = TW.clamp(n.stability + (target - n.stability) * 0.25 + (r() - 0.5) * 0.04, 0.05, 1);
       }
       // 反乱・独立
       this.rebellions();
+      this.develop();
       // 都市の成長
       for (const c of this.cities) {
         const n = c.owner >= 0 ? this.nations[c.owner] : null;
@@ -917,6 +1010,7 @@
           let u = 0.002 + dc * 0.03 + share * 0.06 + Math.max(0, share - 0.3) * 0.9;
           if (this.t - c.conqueredAt < TPY * 15 && c.originRoot && c.originRoot !== n.root) u += 0.035;
           u += n.wars * 0.006 + (1 - n.stability) * 0.05 + c.unrest * 0.08;
+          if (c.dev >= 8) u *= 0.5;
           if (A <= 2) u += 0.06;
           if (A <= 1) u += 0.15;
           const crowd = A / this.initialCount;
@@ -959,7 +1053,7 @@
       if (capCity.originRoot && capCity.originRoot !== parent.root && this.rand() < 0.7) root = capCity.originRoot;
       const n = this.createNation(capCity, {
         root, gov: TW.Names.rebelGov(this.rand), avoid: [parent.color],
-        manpower: 30 + parent.manpower * 0.2 * group.length, parentName: parent.name,
+        manpower: 30 + parent.manpower * 0.2 * group.length, parentName: parent.name, culture: parent.culture * 0.5,
       });
       if (!n) return null;
       parent.manpower *= 0.8;
@@ -1077,7 +1171,7 @@
       for (const c of this.cities) {
         const d = Math.hypot(c.x - cx, c.y - cy);
         if (d > R) continue;
-        c.pop *= 0.5; c.defense *= 0.5; c.unrest = Math.min(1, c.unrest + 0.3);
+        c.pop *= 0.5; c.defense *= 0.5; c.dev *= 0.85; c.unrest = Math.min(1, c.unrest + 0.3);
         if (c.owner >= 0) hit.add(c.owner);
       }
       for (const a of this.armies) if (Math.hypot(a.x - cx, a.y - cy) <= R) a.str *= 0.4;
@@ -1100,7 +1194,7 @@
       }
       for (const c of this.cities) {
         if (Math.hypot(c.x - cx, c.y - cy) > R) continue;
-        c.pop *= 0.45; c.defense = 0;
+        c.pop *= 0.45; c.defense = 0; c.dev *= 0.5; c.built = TW.buildingsOf(c.dev).length;
       }
       for (const a of this.armies) if (Math.hypot(a.x - cx, a.y - cy) <= R) a.str *= 0.5;
       for (const id of hit) this.nations[id].stability = Math.max(0.05, this.nations[id].stability - 0.1);
@@ -1113,7 +1207,7 @@
       if (!n || !n.alive) return false;
       n.manpower += 80 + n.value * 0.25;
       n.stability = Math.min(1, n.stability + 0.3);
-      for (const c of this.cities) if (c.owner === nId) { c.defense = this.maxDefense(c); c.pop *= 1.1; c.unrest = 0; }
+      for (const c of this.cities) if (c.owner === nId) { c.defense = this.maxDefense(c); c.pop *= 1.1; c.unrest = 0; c.dev = Math.min(10, c.dev + 0.8); }
       const cap = this.cities[n.capital];
       this.addLog('god', `${n.name}に天の恵みが降り注いだ`, cap, true, [n]);
       this.effect('bless', cap.x, cap.y, 8);
