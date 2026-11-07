@@ -349,8 +349,32 @@
   $('#btn-play').addEventListener('click', () => setPaused(!app.paused));
   $$('#speed [data-speed]').forEach(b => b.addEventListener('click', () => setSpeed(+b.dataset.speed)));
   $('#btn-panel').addEventListener('click', () => { document.body.classList.toggle('panel-hidden'); });
-  function syncSound() { $('#btn-sound').textContent = TW.Audio.enabled ? '🔊' : '🔇'; }
-  $('#btn-sound').addEventListener('click', () => { TW.Audio.setEnabled(!TW.Audio.enabled); syncSound(); TW.Audio.play('click'); });
+  // サウンド設定
+  function syncSound() {
+    const A = TW.Audio;
+    $('#btn-sound').textContent = A.enabled ? '🔊' : '🔇';
+    $('#bgm-on').checked = A.bgm; $('#sfx-on').checked = A.sfx;
+    $('#bgm-vol').value = Math.round(A.bgmVol * 100); $('#sfx-vol').value = Math.round(A.sfxVol * 100);
+    $('#bgm-vol').disabled = !A.bgm; $('#sfx-vol').disabled = !A.sfx;
+    $('#sound-hint').textContent = !A.enabled ? '' : A.running ? '再生中' : '画面を一度タップ/クリックすると音が鳴り始めます。iPhoneで聞こえない場合はマナーモードを解除してください。';
+  }
+  TW.Audio.onChange(syncSound);
+  $('#btn-sound').addEventListener('click', ev => {
+    ev.stopPropagation();
+    const pop = $('#sound-pop');
+    pop.hidden = !pop.hidden;
+    syncSound();
+    setTimeout(syncSound, 300);
+  });
+  document.addEventListener('pointerdown', ev => {
+    const pop = $('#sound-pop');
+    if (!pop.hidden && !pop.contains(ev.target) && ev.target !== $('#btn-sound')) pop.hidden = true;
+  });
+  $('#bgm-on').addEventListener('change', () => TW.Audio.setBgm($('#bgm-on').checked));
+  $('#sfx-on').addEventListener('change', () => { TW.Audio.setSfx($('#sfx-on').checked); TW.Audio.play('click'); });
+  $('#bgm-vol').addEventListener('input', () => TW.Audio.setBgmVol($('#bgm-vol').value / 100));
+  $('#sfx-vol').addEventListener('input', () => TW.Audio.setSfxVol($('#sfx-vol').value / 100));
+  $('#sfx-vol').addEventListener('change', () => TW.Audio.play('alliance'));
   syncSound();
   $('#btn-help').addEventListener('click', () => { $('#modal-help').hidden = false; });
   $('#help-close').addEventListener('click', () => { $('#modal-help').hidden = true; });
@@ -718,6 +742,12 @@
         if (performance.now() - t0 > 22) { app.acc = Math.min(app.acc, 2); break; }
       }
       $('#date').textContent = `暦 ${sim.year()}年 ${sim.month()}月`;
+      if (now - (app.moodAt || 0) > 2000) {
+        // 戦争中の国の割合でBGMの雰囲気を変える
+        app.moodAt = now;
+        const al = sim.aliveNations();
+        TW.Audio.setMood(al.length ? al.filter(n => n.wars > 0).length / al.length : 0);
+      }
       updatePanels(false);
     }
     R.draw(now, app.editing ? editor : null);

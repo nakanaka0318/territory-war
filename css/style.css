@@ -288,3 +288,15 @@ ul.help { padding-left: 20px; line-height: 1.7; font-size: 14px; }
 @media (min-width: 761px) and (min-height: 521px) {
   body:not(.panel-hidden):not(.editing) #toasts { left: calc(50% - 172px); width: min(620px, calc(100% - 420px)); }
 }
+
+/* サウンド設定 */
+#sound-pop {
+  position: absolute; top: calc(52px + env(safe-area-inset-top)); right: 12px; z-index: 15;
+  width: min(300px, calc(100vw - 24px)); padding: 10px 14px;
+}
+#sound-pop[hidden] { display: none; }
+#sound-pop .title { font-weight: 900; margin-bottom: 6px; }
+#sound-pop .srow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dotted var(--line); }
+#sound-pop .tog { display: flex; align-items: center; gap: 6px; font-weight: 700; min-width: 96px; cursor: pointer; }
+#sound-pop input[type=range] { flex: 1; accent-color: #8c2a1a; }
+#sound-pop .hint { margin: 6px 0 0; }
