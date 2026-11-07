@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>領土戦記 — Territory War</title>
+<meta name="description" content="古地図の上でNPCの国々が領土を奪い合う様子を眺める放置観戦ゲーム">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">領土戦記<small>Territory War</small></div>
+    <div id="date" title="現在の暦">暦 1年</div>
+    <div class="group" id="speed">
+      <button id="btn-play" class="icon" title="一時停止 / 再開 (Space)">⏸</button>
+      <button data-speed="0" title="x0.5 (1)">½</button>
+      <button data-speed="1" class="on" title="x1 (2)">1</button>
+      <button data-speed="2" title="x2 (3)">2</button>
+      <button data-speed="3" title="x4 (4)">4</button>
+      <button data-speed="4" title="x8 (5)">8</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="group">
+      <button id="btn-new" title="新しい世界">🌐<span class="lbl">新しい世界</span></button>
+      <button id="btn-editor" title="大陸エディタ">✏️<span class="lbl">大陸エディタ</span></button>
+      <button id="btn-sound" class="icon" title="効果音 ON/OFF">🔊</button>
+      <button id="btn-help" class="icon" title="遊び方">？</button>
+      <button id="btn-panel" class="icon" title="パネル表示切替">☰</button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <canvas id="map"></canvas>
+    <div id="tooltip" hidden></div>
+    <div id="toasts"></div>
+
+    <div id="godbar" class="paper">
+      <div class="title">神の手</div>
+      <button data-tool="look" class="on" title="観察: 国をクリックで詳細">👁<span>観察</span></button>
+      <button data-tool="plague" title="疫病: 範囲内の都市と軍を弱らせる">☠️<span>疫病</span></button>
+      <button data-tool="disaster" title="天災: 範囲内の土地を荒廃させる">🌋<span>天災</span></button>
+      <button data-tool="bless" title="祝福: クリックした国に兵力と安定を与える">✨<span>祝福</span></button>
+      <button data-tool="incite" title="反乱扇動: 近くの都市で独立戦争を起こす">🔥<span>扇動</span></button>
+    </div>
+
+    <svg id="compass" viewBox="-50 -50 100 100" aria-hidden="true">
+      <circle r="34" fill="none" stroke="#4a3828" stroke-width="1.2"/>
+      <circle r="30" fill="none" stroke="#4a3828" stroke-width="0.6" stroke-dasharray="2 2"/>
+      <g fill="#4a3828">
+        <polygon points="0,-44 5,-5 0,0 -5,-5"/>
+        <polygon points="0,44 5,5 0,0 -5,5" fill="#e9dcb9" stroke="#4a3828" stroke-width="0.8"/>
+        <polygon points="44,0 5,5 0,0 5,-5" fill="#e9dcb9" stroke="#4a3828" stroke-width="0.8"/>
+        <polygon points="-44,0 -5,5 0,0 -5,-5"/>
+        <polygon points="22,-22 3,-1 0,0 1,-3" opacity="0.7"/>
+        <polygon points="-22,22 -3,1 0,0 -1,3" opacity="0.7"/>
+        <polygon points="22,22 1,3 0,0 3,1" opacity="0.7"/>
+        <polygon points="-22,-22 -1,-3 0,0 -3,-1" opacity="0.7"/>
+      </g>
+      <text y="-46" text-anchor="middle" font-size="9" font-family="serif" fill="#4a3828" font-weight="700">N</text>
+    </svg>
+
+    <aside id="panel" class="paper">
+      <nav class="tabs">
+        <button data-tab="rank" class="on">勢力</button>
+        <button data-tab="log">年代記</button>
+        <button data-tab="graph">推移</button>
+        <button data-tab="detail">国情報</button>
+      </nav>
+      <section data-pane="rank" class="pane on">
+        <div id="summary"></div>
+        <ol id="ranking"></ol>
+      </section>
+      <section data-pane="log" class="pane">
+        <label class="chk"><input type="checkbox" id="log-major" checked> 主要な出来事のみ</label>
+        <ul id="chronicle"></ul>
+      </section>
+      <section data-pane="graph" class="pane">
+        <p class="hint">各国の領土シェアの推移</p>
+        <canvas id="graph" width="320" height="260"></canvas>
+        <div id="graph-legend"></div>
+      </section>
+      <section data-pane="detail" class="pane">
+        <div id="detail"><p class="hint">地図上の国をクリックすると詳細が表示されます。</p></div>
+      </section>
+    </aside>
+
+    <div id="editorbar" class="paper" hidden>
+      <div class="row">
+        <span class="title">大陸エディタ</span>
+        <button data-etool="land" class="on" title="陸地を描く">🟫 陸</button>
+        <button data-etool="sea" title="海を描く">🌊 海</button>
+        <button data-etool="capital" title="クリックで首都を置く">🏰 首都</button>
+        <button data-etool="erase" title="クリックで首都を消す">✖ 首都削除</button>
+        <button data-etool="pan" title="ドラッグで移動">✋ 移動</button>
+        <label class="slider">筆 <input type="range" id="brush" min="1" max="14" value="4"><b id="brush-v">4</b></label>
+        <button id="e-undo" title="元に戻す (Ctrl+Z)">↶</button>
+      </div>
+      <div class="row">
+        <button id="e-random" title="ランダムな大陸から始める">🎲 ランダム</button>
+        <button id="e-earth" title="地球の形から始める">🌍 地球</button>
+        <button id="e-clear" title="全て海にする">🧹 全て海</button>
+        <button id="e-fill" title="全て陸にする">⛰ 全て陸</button>
+        <span class="sep"></span>
+        <button id="e-save" title="ブラウザに保存">💾 保存</button>
+        <button id="e-load" title="保存した地図を開く">📂 読込</button>
+        <button id="e-export" title="ファイルに書き出す">⬇ 書出</button>
+        <button id="e-import" title="ファイルから読み込む">⬆ 取込</button>
+        <input type="file" id="e-file" accept=".json,application/json" hidden>
+      </div>
+      <div class="row">
+        <span id="e-info" class="hint"></span>
+        <label class="slider" title="首都を2つ以上置かなかった場合の国数">国の数 <input type="range" id="e-nations" min="2" max="30" value="8"><b id="e-nations-v">8</b></label>
+        <span class="sep"></span>
+        <button id="e-start" class="primary">▶ この地図で開始</button>
+        <button id="e-close">閉じる</button>
+      </div>
+    </div>
+  </main>
+
+  <div id="modal-new" class="modal" hidden>
+    <div class="dialog paper">
+      <h2>新しい世界を創造する</h2>
+      <div class="field">
+        <div class="label">地図</div>
+        <label class="radio"><input type="radio" name="maptype" value="random" checked> 🎲 ランダム大陸</label>
+        <label class="radio"><input type="radio" name="maptype" value="earth"> 🌍 地球</label>
+        <label class="radio"><input type="radio" name="maptype" value="saved"> 📂 保存した地図
+          <select id="saved-select"></select></label>
+      </div>
+      <div class="field" id="seed-field">
+        <div class="label">シード <span class="hint">(同じシードで同じ地形)</span></div>
+        <div class="seedrow"><input type="text" id="seed" maxlength="32"><button id="seed-rand" title="ランダム">🎲</button></div>
+      </div>
+      <div class="field">
+        <div class="label">国の数 <b id="nations-v">8</b></div>
+        <input type="range" id="nations" min="2" max="30" value="8">
+        <p class="hint" id="nations-hint"></p>
+      </div>
+      <div class="actions">
+        <button id="new-editor">✏️ 大陸エディタで作る</button>
+        <span class="spacer"></span>
+        <button id="new-cancel">キャンセル</button>
+        <button id="new-start" class="primary">天地創造</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-load" class="modal" hidden>
+    <div class="dialog paper">
+      <h2>保存した地図</h2>
+      <ul id="load-list"></ul>
+      <div class="actions"><span class="spacer"></span><button id="load-close">閉じる</button></div>
+    </div>
+  </div>
+
+  <div id="modal-help" class="modal" hidden>
+    <div class="dialog paper">
+      <h2>領土戦記の楽しみ方</h2>
+      <p>NPCの国々が勝手に領土を広げ、戦争・同盟・反乱を繰り返します。あなたはそれを眺めるだけ。ときどき神として介入もできます。</p>
+      <ul class="help">
+        <li><b>ドラッグ</b>で地図を移動、<b>ホイール / ピンチ</b>で拡大縮小</li>
+        <li><b>Space</b> 一時停止、<b>1〜5</b> 速度変更</li>
+        <li>国をクリックすると<b>国情報</b>（領土・兵力・同盟・戦争・歴史）</li>
+        <li>赤い点線は<b>戦争中の前線</b>、矢印は<b>軍の進軍先</b>、赤い輪は<b>攻囲中の都市</b></li>
+        <li>山・森・丘は守りやすく、川は越えにくい。軍は船で海も渡ります</li>
+        <li>大きくなりすぎた国や遠方の征服地では<b>反乱・独立</b>が起き、歴史は終わりません</li>
+        <li>神の手: ☠️疫病 / 🌋天災 / ✨祝福 / 🔥反乱扇動</li>
+        <li>大陸エディタでは<b>陸と海を描くだけ</b>。山や森、砂漠、川は自動生成されます。首都の位置も指定できます</li>
+      </ul>
+      <div class="actions"><span class="spacer"></span><button id="help-close" class="primary">閉じる</button></div>
+    </div>
+  </div>
+
+  <div id="loading" hidden><div class="paper">世界を創造しています…</div></div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/earth-data.js"></script>
+<script src="js/world.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/render.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
