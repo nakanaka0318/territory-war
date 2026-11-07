@@ -91,9 +91,67 @@
       this.fillCv = document.createElement('canvas');
       this.fillCv.width = w.W; this.fillCv.height = w.H;
       this.fillImg = this.fillCv.getContext('2d').createImageData(w.W, w.H);
+      this.roadCv = document.createElement('canvas');
+      this.roadCv.width = this.WW; this.roadCv.height = this.WH;
+      this.lastRoad = 0;
       this.fit();
     }
-    setSim(sim) { this.sim = sim; this.lastTerr = 0; sim.dirty = true; }
+    setSim(sim) { this.sim = sim; this.lastTerr = 0; this.lastRoad = 0; sim.dirty = true; sim.roadDirty = true; }
+
+    // 自動カメラ: 目標へゆっくり移動 (zs = 1セルの画面px)
+    flyTo(cx, cy, zs) {
+      this.camTarget = { x: (cx + 0.5) * this.S, y: (cy + 0.5) * this.S, z: TW.clamp(zs / this.S, this.minZ, this.maxZ) };
+    }
+    flyOverview() {
+      const keep = this.cam;
+      this.fit();
+      this.camTarget = { ...this.cam };
+      this.cam = keep;
+    }
+    stepCamera() {
+      const t = this.camTarget;
+      if (!t) return;
+      const c = this.cam, k = 0.04;
+      c.x += (t.x - c.x) * k; c.y += (t.y - c.y) * k;
+      c.z = Math.exp(Math.log(c.z) + (Math.log(t.z) - Math.log(c.z)) * k);
+      this.clampCam();
+      if (Math.abs(t.x - c.x) < 1 && Math.abs(t.y - c.y) < 1 && Math.abs(t.z - c.z) / t.z < 0.01) this.camTarget = null;
+    }
+
+    // ---------- 道 ----------
+    buildRoads() {
+      const sim = this.sim, w = this.w, W = w.W, H = w.H, S = this.S, road = sim.road;
+      const lv = i => TW.roadLevel(road[i]);
+      const jit = i => {
+        const h = Math.imul(i ^ 0x5bd1e995, 2654435761) >>> 0;
+        return [((h & 1023) / 1023 - 0.5) * 0.35, (((h >>> 10) & 1023) / 1023 - 0.5) * 0.35];
+      };
+      const pt = i => { const [jx, jy] = jit(i); return [((i % W) + 0.5 + jx) * S, (((i / W) | 0) + 0.5 + jy) * S]; };
+      const paths = [null, new Path2D(), new Path2D(), new Path2D()];
+      const seg = (a, b, l) => { const p = pt(a), q = pt(b); paths[l].moveTo(p[0], p[1]); paths[l].lineTo(q[0], q[1]); };
+      for (const i of w.landCells) {
+        const a = lv(i);
+        if (!a) continue;
+        const x = i % W, y = (i / W) | 0;
+        const r = x < W - 1 && w.land[i + 1] ? lv(i + 1) : 0;
+        const d = y < H - 1 && w.land[i + W] ? lv(i + W) : 0;
+        const l = x > 0 && w.land[i - 1] ? lv(i - 1) : 0;
+        if (r) seg(i, i + 1, Math.min(a, r));
+        if (d) seg(i, i + W, Math.min(a, d));
+        if (y < H - 1 && x < W - 1 && !r && !d && w.land[i + W + 1]) { const b = lv(i + W + 1); if (b) seg(i, i + W + 1, Math.min(a, b)); }
+        if (y < H - 1 && x > 0 && !l && !d && w.land[i + W - 1]) { const b = lv(i + W - 1); if (b) seg(i, i + W - 1, Math.min(a, b)); }
+      }
+      const t = this.roadCv.getContext('2d');
+      t.clearRect(0, 0, this.WW, this.WH);
+      t.lineCap = 'round'; t.lineJoin = 'round';
+      t.strokeStyle = 'rgba(100,68,40,0.75)'; t.lineWidth = Math.max(1, S * 0.17);
+      t.setLineDash([S * 0.3, S * 0.25]); t.stroke(paths[1]); t.setLineDash([]);
+      t.strokeStyle = 'rgba(246,234,204,0.6)'; t.lineWidth = Math.max(2, S * 0.42); t.stroke(paths[2]);
+      t.strokeStyle = 'rgba(92,60,34,0.92)'; t.lineWidth = Math.max(1.5, S * 0.26); t.stroke(paths[2]);
+      t.strokeStyle = 'rgba(70,46,28,0.97)'; t.lineWidth = Math.max(3, S * 0.56); t.stroke(paths[3]);
+      t.strokeStyle = 'rgba(236,218,180,0.97)'; t.lineWidth = Math.max(1.5, S * 0.26); t.stroke(paths[3]);
+      sim.roadDirty = false;
+    }
 
     buildBase() {
       const w = this.w, W = w.W, H = w.H, N = w.N, S = this.S, WW = this.WW, WH = this.WH;
@@ -393,6 +451,8 @@
       ctx.setTransform(z, 0, 0, z, dpr * this.cw / 2 - this.cam.x * z, dpr * this.ch / 2 - this.cam.y * z);
       if (editor) { this.drawEditor(editor); return; }
       if (!this.base) return;
+      this.stepCamera();
+      ctx.setTransform(this.cam.z * dpr, 0, 0, this.cam.z * dpr, dpr * this.cw / 2 - this.cam.x * this.cam.z * dpr, dpr * this.ch / 2 - this.cam.y * this.cam.z * dpr);
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(this.base, 0, 0);
       const sim = this.sim;
@@ -401,6 +461,8 @@
         this.buildTerritory(); this.lastTerr = now; this.terrSel = this.selectedUid;
       }
       ctx.drawImage(this.terr, 0, 0);
+      if (sim.roadDirty && now - this.lastRoad > 1000) { this.buildRoads(); this.lastRoad = now; }
+      ctx.drawImage(this.roadCv, 0, 0);
       this.drawArrows();
       this.drawCities();
       this.drawLabels();
@@ -507,7 +569,51 @@
           ctx.fillStyle = 'rgb(48,32,20)'; ctx.fillText(c.name, tx, y);
         }
       }
+      this.drawWonders(px, zs);
       ctx.restore();
+    }
+
+    drawWonders(px, zs) {
+      const ctx = this.ctx, sim = this.sim, S = this.S;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const w of sim.wonders) {
+        if (w.state === 'none') continue;
+        const c = sim.cities[w.city];
+        const x = (c.x + 0.5) * S, y = (c.y + 0.5) * S - 18 * px;
+        if (w.state === 'built') {
+          ctx.beginPath(); ctx.arc(x, y, 12 * px, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(250,240,210,0.95)'; ctx.fill();
+          ctx.lineWidth = 2 * px; ctx.strokeStyle = 'rgb(196,150,40)'; ctx.stroke();
+          ctx.font = `${15 * px}px serif`;
+          ctx.fillText(w.icon, x, y + 1 * px);
+        } else {
+          // 遺跡: 折れた柱
+          ctx.strokeStyle = 'rgba(70,52,36,0.85)'; ctx.lineWidth = 2 * px; ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(x - 7 * px, y + 6 * px); ctx.lineTo(x + 7 * px, y + 6 * px);
+          ctx.moveTo(x - 4.5 * px, y + 6 * px); ctx.lineTo(x - 4.5 * px, y - 5 * px);
+          ctx.moveTo(x, y + 6 * px); ctx.lineTo(x, y - 1 * px);
+          ctx.moveTo(x + 4.5 * px, y + 6 * px); ctx.lineTo(x + 4.5 * px, y - 7 * px);
+          ctx.stroke();
+        }
+        if (zs >= 6) {
+          const label = w.state === 'built' ? w.name : `${w.name}の遺跡`;
+          ctx.font = `700 ${9.5 * px}px ${FONT}`;
+          ctx.lineWidth = 3 * px; ctx.strokeStyle = 'rgba(246,236,210,0.9)';
+          ctx.strokeText(label, x, y - 18 * px);
+          ctx.fillStyle = w.state === 'built' ? 'rgb(120,80,10)' : 'rgb(90,72,56)';
+          ctx.fillText(label, x, y - 18 * px);
+        }
+      }
+      // 建設中の驚異 (拡大時のみ)
+      if (zs >= 8) {
+        ctx.font = `${10 * px}px serif`;
+        for (const n of sim.nations) {
+          if (!n || !n.alive || !n.project) continue;
+          const c = sim.cities[n.project.city];
+          ctx.fillText('🏗️', (c.x + 0.5) * S + 10 * px, (c.y + 0.5) * S - 8 * px);
+        }
+      }
     }
 
     drawLabels() {

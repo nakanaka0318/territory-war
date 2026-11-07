@@ -5,17 +5,19 @@
   const $$ = s => Array.from(document.querySelectorAll(s));
   const SPEEDS = [0.5, 1, 2, 4, 8];
   const TPS = 10; // x1 のときの1秒あたりティック数
-  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️' };
-  const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture']);
+  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️', wonder: '🏛️', poem: '🪕' };
+  const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture', 'poem']);
 
   const canvas = $('#map');
   const R = new TW.Renderer(canvas);
   const editor = new TW.Editor();
+  const comm = new TW.Commentary(R, document.querySelector('#ticker'));
   const app = {
     sim: null, world: null, editing: false, paused: false, speed: 1, acc: 0,
     tool: 'look', settings: { type: 'random', seed: '', nations: 8, saved: '' },
   };
   window.app = app; // デバッグ用
+  app.R = R; app.comm = comm;
 
   // ---------- 世界の生成 ----------
   function randomSeedText() {
@@ -56,6 +58,8 @@
         R.setSim(sim);
         $('#chronicle').innerHTML = '';
         for (const e of sim.log) onEvent(e, true);
+        comm.reset();
+        app.worldName = cfg.type === 'earth' ? '地球' : cfg.type === 'random' ? TW.Names.root(TW.mulberry32(seed)) + '大陸' : (cfg.name || '新大陸');
         $('#detail').innerHTML = '<p class="hint">地図上の国をクリックすると詳細が表示されます。</p>';
         if (cfg.type === 'random') history.replaceState(null, '', `#map=random&seed=${encodeURIComponent(seedText)}&n=${cfg.nations}`);
         else if (cfg.type === 'earth') history.replaceState(null, '', `#map=earth&seed=${encodeURIComponent(seedText)}&n=${cfg.nations}`);
@@ -71,8 +75,10 @@
 
   // ---------- イベント ----------
   function onEvent(e, silent) {
-    const majorish = e.major || MAJOR_TYPES.has(e.type);
+    const majorish = e.major || MAJOR_TYPES.has(e.type) || (e.type === 'wonder' && /完成|奪取|崩れ/.test(e.text));
     if (!silent) {
+      comm.onEvent(e, app.sim);
+      if (e.type === 'wonder' && e.major) { TW.Audio.play('culture'); toast(`${ICON.wonder} ${e.text}`, e); }
       const snd = { war: 'war', peace: 'peace', alliance: 'alliance', capture: 'capture', capital: 'capital', destroy: 'destroy', rebel: 'rebel', betray: 'betray', culture: 'culture', develop: 'develop' }[e.type];
       if (snd && (e.type !== 'war' || e.major || Math.random() < 0.5) && (e.type !== 'develop' || e.major)) TW.Audio.play(snd);
       if (e.type === 'battle' && e.major) TW.Audio.play('battle');
@@ -191,7 +197,7 @@
     lastPanel = now;
     const sim = app.sim;
     if (!sim) return;
-    if (activeTab === 'rank') renderRanking();
+    if (activeTab === 'rank') { renderRanking(); renderWonders(); }
     else if (activeTab === 'graph') renderGraph();
     else if (activeTab === 'detail') renderDetail();
   }
@@ -219,6 +225,26 @@
         `<span class="sub">都市 ${n.cityCount}　兵 ${TW.fmtTroops(n.manpower + n.armyStr)}　軍団 ${n.armyCount}　🎭${TW.ERAS[n.era].name}</span></li>`;
     }).join('');
   }
+  function renderWonders() {
+    const sim = app.sim;
+    $('#wonders').innerHTML = sim.wonders.map(w => {
+      let st = '<span class="dim">未建設</span>';
+      if (w.state === 'built') {
+        const c = sim.cities[w.city], o = c.owner >= 0 ? sim.nations[c.owner] : null;
+        st = o ? `<span class="sw" style="background:${o.css}"></span>${escapeHtml(o.name)}・${escapeHtml(c.name)}` : escapeHtml(c.name);
+      } else if (w.state === 'ruin') st = `<span class="dim">遺跡（${escapeHtml(sim.cities[w.city].name)}）</span>`;
+      const builders = sim.aliveNations().filter(n => n.project && n.project.key === w.key)
+        .map(n => `🏗️${escapeHtml(n.name)} ${Math.min(99, Math.round(n.project.progress / n.project.need * 100))}%`).join(' ');
+      const loc = w.state !== 'none' ? ` data-city="${w.city}"` : '';
+      return `<li${loc} title="${escapeHtml(w.desc)}"><span class="wi">${w.state === 'ruin' ? '🏚️' : w.icon}</span><div><b>${escapeHtml(w.name)}</b><br><small>${st}${builders ? '　' + builders : ''}</small></div></li>`;
+    }).join('');
+  }
+  $('#wonders').addEventListener('click', ev => {
+    const li = ev.target.closest('li[data-city]');
+    if (!li) return;
+    const c = app.sim.cities[+li.dataset.city];
+    R.centerOn(c.x, c.y, 7);
+  });
   $('#ranking').addEventListener('click', ev => {
     const li = ev.target.closest('li[data-uid]');
     if (!li) return;
@@ -305,12 +331,22 @@
       `<div class="sub">${foundedYear}年建国${n.parentName ? `（${escapeHtml(n.parentName)}から独立）` : ''}・建国${sim.year() - foundedYear}年目</div>` +
       `<table>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>` +
       `<div class="rel"><div class="h">安定度 ${(n.stability * 100).toFixed(0)}%</div><div class="meter"><i style="width:${n.stability * 100}%"></i></div></div>` +
-      cultureBlock(sim, n) +
+      cultureBlock(sim, n) + wonderBlock(sim, n) +
       relBlock('⚔️ 交戦中', lists.war) + relBlock('🤝 同盟国', lists.ally) + relBlock('🕊️ 停戦中', lists.truce) +
       (neighbors.length ? `<div class="rel"><div class="h">隣国との関係</div>${neighbors.map(({ m, op }) => natLink(m).replace('</span>', '</span>') + `<small>${op > 0 ? '+' : ''}${op.toFixed(0)}</small>`).join(' ')}</div>` : '') +
       `<div class="rel"><button class="btn" id="goto-cap">首都へ移動</button></div>` +
       `<div class="rel"><div class="h">歴史</div><ul class="ev">${evHtml || '<li>まだ記録はない</li>'}</ul></div>`;
     $('#goto-cap').onclick = () => R.centerOn(cap.x, cap.y, 4);
+  }
+  function wonderBlock(sim, n) {
+    const own = sim.wonders.filter(w => w.state === 'built' && sim.cities[w.city].owner === n.id);
+    let h = '';
+    if (own.length) h += `<div class="rel"><div class="h">🏛️ 保有する世界の驚異</div>${own.map(w => `<div class="wown">${w.icon} <b>${escapeHtml(w.name)}</b>（${escapeHtml(sim.cities[w.city].name)}）<br><small>${escapeHtml(w.desc)}</small></div>`).join('')}</div>`;
+    if (n.project) {
+      const w = sim.wonders.find(x => x.key === n.project.key);
+      h += `<div class="rel"><div class="h">🏗️ 建設中: ${escapeHtml(w.name)}（${escapeHtml(sim.cities[n.project.city].name)}）</div><div class="meter culture"><i style="width:${Math.min(100, n.project.progress / n.project.need * 100)}%"></i></div></div>`;
+    }
+    return h;
   }
   function cultureBlock(sim, n) {
     const era = TW.ERAS[n.era], next = TW.ERAS[n.era + 1];
@@ -343,9 +379,32 @@
     setPaused(false);
   }
   $('#btn-speed').addEventListener('click', () => setSpeed((app.speed + 1) % SPEEDS.length));
-  $('#z-in').addEventListener('click', () => R.zoomAt(R.cw / 2, R.ch / 2, 1.4));
-  $('#z-out').addEventListener('click', () => R.zoomAt(R.cw / 2, R.ch / 2, 1 / 1.4));
-  $('#z-fit').addEventListener('click', () => refit());
+  $('#z-in').addEventListener('click', () => { comm.userMoved(); R.zoomAt(R.cw / 2, R.ch / 2, 1.4); });
+  $('#z-out').addEventListener('click', () => { comm.userMoved(); R.zoomAt(R.cw / 2, R.ch / 2, 1 / 1.4); });
+  $('#z-fit').addEventListener('click', () => { comm.userMoved(); refit(); });
+  // 実況・自動カメラ
+  function syncComm() {
+    $('#btn-comm').classList.toggle('on', comm.enabled);
+    $('#btn-cam').classList.toggle('on', comm.autoCam);
+  }
+  $('#btn-comm').addEventListener('click', () => { comm.setEnabled(!comm.enabled); syncComm(); toast(comm.enabled ? '🎙 実況 ON' : '🎙 実況 OFF'); });
+  $('#btn-cam').addEventListener('click', () => { comm.setAutoCam(!comm.autoCam); syncComm(); toast(comm.autoCam ? '🎥 自動カメラ ON — 注目の場所へ自動で移動します' : '🎥 自動カメラ OFF'); });
+  syncComm();
+  // 歴史書
+  function openBook() {
+    if (!app.sim) return;
+    $('#book-body').innerHTML = TW.HistoryBook.build(app.sim, app.worldName || '世界');
+    $('#modal-book').hidden = false;
+    $('#book-body').parentElement.scrollTop = 0;
+  }
+  $('#btn-book').addEventListener('click', openBook);
+  $('#btn-book2').addEventListener('click', openBook);
+  $('#book-close').addEventListener('click', () => { $('#modal-book').hidden = true; });
+  $('#modal-book').addEventListener('click', ev => {
+    if (ev.target.id === 'modal-book') $('#modal-book').hidden = true;
+    const a = ev.target.closest('a[href^="#"]');
+    if (a) { ev.preventDefault(); const t = $('#book-body').querySelector(a.getAttribute('href')); if (t) t.scrollIntoView({ behavior: 'smooth' }); }
+  });
   $('#btn-play').addEventListener('click', () => setPaused(!app.paused));
   $$('#speed [data-speed]').forEach(b => b.addEventListener('click', () => setSpeed(+b.dataset.speed)));
   $('#btn-panel').addEventListener('click', () => { document.body.classList.toggle('panel-hidden'); });
@@ -415,7 +474,7 @@
     if (type === 'saved') {
       const m = TW.MapStore.get($('#saved-select').value);
       if (!m) { toast('地図が見つかりません'); return; }
-      startWorld({ type: 'saved', W: m.W, H: m.H, mask: TW.decodeRLE(m.rle, m.W * m.H), capitals: m.capitals, nations, seed: $('#seed').value.trim() });
+      startWorld({ type: 'saved', W: m.W, H: m.H, mask: TW.decodeRLE(m.rle, m.W * m.H), capitals: m.capitals, nations, seed: $('#seed').value.trim(), name: m.name });
     } else startWorld({ type, seed: $('#seed').value.trim(), nations });
     setPaused(false);
   });
@@ -539,7 +598,7 @@
     const isEarth = editor.W === window.EARTH_MAP.W && editor.H === window.EARTH_MAP.H;
     closeEditor();
     startWorld({
-      type: 'custom', W: editor.W, H: editor.H, mask: editor.mask.slice(), capitals: caps, nations,
+      type: 'custom', W: editor.W, H: editor.H, mask: editor.mask.slice(), capitals: caps, nations, name: editor.name,
       latTop: isEarth ? window.EARTH_MAP.latTop : 70, latBottom: isEarth ? window.EARTH_MAP.latBottom : -70,
     });
     setPaused(false);
@@ -618,6 +677,7 @@
       const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       R.cam.x -= (mx - pinch.mx) / R.cam.z; R.cam.y -= (my - pinch.my) / R.cam.z;
       R.zoomAt(mx, my, d / Math.max(1, pinch.d));
+      comm.userMoved();
       pinch = { d, mx, my };
       return;
     }
@@ -630,6 +690,7 @@
       } else if (drag.moved) {
         R.cam.x -= dx / R.cam.z; R.cam.y -= dy / R.cam.z; R.clampCam();
         canvas.classList.add('dragging');
+        comm.userMoved();
       }
       drag.lx = e.offsetX; drag.ly = e.offsetY;
     } else if (!app.editing) updateTooltip(e.offsetX, e.offsetY);
@@ -658,6 +719,7 @@
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     R.zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
+    comm.userMoved();
   }, { passive: false });
 
   window.addEventListener('keydown', e => {
@@ -684,7 +746,8 @@
       const o = sim.owner[c.i];
       if (o >= 0) { const n = sim.nations[o]; html += `<b><span class="sw" style="background:${n.css}"></span>${escapeHtml(n.name)}</b><br>`; }
       else html += '<b>未開の地</b><br>';
-      html += `${t.name}${w.river[c.i] ? '・川' : ''}`;
+      const rl = TW.roadLevel(sim.road[c.i]);
+      html += `${t.name}${w.river[c.i] ? '・川' : ''}${rl ? '・' + TW.ROAD_NAMES[rl] : ''}`;
       // 近くの都市
       let city = null, bd = 2.3;
       for (const ct of sim.cities) { const d = Math.hypot(ct.x - c.fx + 0.5, ct.y - c.fy + 0.5); if (d < bd) { bd = d; city = ct; } }
@@ -692,6 +755,8 @@
         html += `<br>${city.capital ? '👑 首都' : '🏘 都市'} <b>${escapeHtml(city.name)}</b> 人口${city.pop.toFixed(1)}万`;
         const bl = TW.buildingsOf(city.dev);
         html += `<br>発展度 ${city.dev.toFixed(1)} ${bl.map(b => b.icon).join('')}`;
+        const wd = sim.wonders.find(x => x.city === city.id && x.state !== 'none');
+        if (wd) html += `<br>${wd.state === 'built' ? wd.icon + ' 世界の驚異「' + escapeHtml(wd.name) + '」' : '🏚️ ' + escapeHtml(wd.name) + 'の遺跡'}`;
         if (city.besieged >= sim.t - 3) html += `<br><span style="color:#a51c12">攻囲中 — 守備 ${Math.max(0, city.defense / sim.maxDefense(city) * 100).toFixed(0)}%</span>`;
       }
     } else html = t.name;
@@ -741,7 +806,6 @@
         app.acc -= 1;
         if (performance.now() - t0 > 22) { app.acc = Math.min(app.acc, 2); break; }
       }
-      $('#date').textContent = `暦 ${sim.year()}年 ${sim.month()}月`;
       if (now - (app.moodAt || 0) > 2000) {
         // 戦争中の国の割合でBGMの雰囲気を変える
         app.moodAt = now;
@@ -750,6 +814,8 @@
       }
       updatePanels(false);
     }
+    if (sim) $('#date').textContent = `暦 ${sim.year()}年 ${sim.month()}月`;
+    if (sim && !app.editing) comm.update(sim, now, !app.paused);
     R.draw(now, app.editing ? editor : null);
     requestAnimationFrame(loop);
   }

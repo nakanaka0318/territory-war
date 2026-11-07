@@ -29,6 +29,7 @@
     <div class="group">
       <button id="btn-new" title="新しい世界">🌐<span class="lbl">新しい世界</span></button>
       <button id="btn-editor" title="大陸エディタ">✏️<span class="lbl">大陸エディタ</span></button>
+      <button id="btn-book" class="wide-only" title="歴史書を開く">📖<span class="lbl">歴史書</span></button>
       <button id="btn-sound" class="icon" title="サウンド設定 (BGM・効果音)">🔊</button>
       <button id="btn-help" class="icon" title="遊び方">？</button>
       <button id="btn-panel" class="icon" title="パネル表示切替">☰</button>
@@ -57,7 +58,10 @@
       <button id="z-in" title="拡大 (+)">＋</button>
       <button id="z-out" title="縮小 (-)">－</button>
       <button id="z-fit" title="全体を表示">⤢</button>
+      <button id="btn-comm" title="実況テロップ ON/OFF">🎙</button>
+      <button id="btn-cam" title="自動カメラ ON/OFF (実況に合わせて注目の場所へ移動)">🎥</button>
     </div>
+    <div id="ticker" hidden><span class="who">🎙 実況</span><span class="txt"></span></div>
 
     <div id="godbar" class="paper">
       <div class="title">神の手</div>
@@ -94,8 +98,11 @@
       <section data-pane="rank" class="pane on">
         <div id="summary"></div>
         <ol id="ranking"></ol>
+        <h4 class="sec">🏛️ 世界の驚異</h4>
+        <ul id="wonders"></ul>
       </section>
       <section data-pane="log" class="pane">
+        <button class="btn book-open" id="btn-book2">📖 歴史書を読む</button>
         <label class="chk"><input type="checkbox" id="log-major" checked> 主要な出来事のみ</label>
         <ul id="chronicle"></ul>
       </section>
@@ -191,11 +198,22 @@
         <li>大きくなりすぎた国や遠方の征服地では<b>反乱・独立</b>が起き、歴史は終わりません</li>
         <li><b>発展と文化</b>: 平和な都市は発展し 🌾農地→⚖️市場→🧱城壁→📜学院→⛪大聖堂→🏛️大図書館 が建ちます。発展が文化点を生み、文化の時代が進むと<b>兵の質</b>・収入・安定度が上がり、文化の劣る隣国の国境を同化していきます（地図上の点線の環＝城壁、金の環＝大図書館）</li>
         <li>通知の <b>📍 移動</b> を押すとその場所へ移動します</li>
+        <li><b>世界の驚異</b>: 文化の進んだ国が世界に一つだけの大建造物を競って建てます。都市を占領すると驚異ごと奪え、戦火や天災で遺跡になることも</li>
+        <li><b>道</b>: 軍がたくさん通った場所に 小道→街道→大街道 ができ、進軍が速くなり沿道の都市が栄えます。使われない道は荒れて消えます</li>
+        <li>🎙 <b>実況</b>: 状況をわかりやすく解説するテロップ。🎥 <b>自動カメラ</b>: 実況に合わせて注目の場所へ移動（地図を触るとしばらく止まります）</li>
+        <li>📖 <b>歴史書</b>: これまでの歴史を時代ごとの章立てで読めます。名場面は吟遊詩人が詩にします</li>
         <li>🔊 から <b>BGM</b>（ゆったりした生成音楽。戦乱が増えると少し暗い曲調に）と<b>効果音</b>をそれぞれON/OFF・音量調整できます。画面を一度タップすると音が鳴り始めます</li>
         <li>神の手: ☠️疫病 / 🌋天災 / ✨祝福 / 🔥反乱扇動</li>
         <li>大陸エディタでは<b>陸と海を描くだけ</b>。山や森、砂漠、川は自動生成されます。首都の位置も指定できます</li>
       </ul>
       <div class="actions"><span class="spacer"></span><button id="help-close" class="primary">閉じる</button></div>
+    </div>
+  </div>
+
+  <div id="modal-book" class="modal" hidden>
+    <div class="dialog book paper">
+      <button class="book-close" id="book-close" title="閉じる">✕</button>
+      <div id="book-body"></div>
     </div>
   </div>
 
@@ -205,10 +223,13 @@
 <script src="js/core.js"></script>
 <script src="js/earth-data.js"></script>
 <script src="js/world.js"></script>
+<script src="js/poems.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/render.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/editor.js"></script>
+<script src="js/commentary.js"></script>
+<script src="js/book.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
