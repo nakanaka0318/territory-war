@@ -73,6 +73,16 @@
       <button data-tool="disaster" title="天災: 範囲内の土地を荒廃させる">🌋<span>天災</span></button>
       <button data-tool="bless" title="祝福: クリックした国に兵力と安定を与える">✨<span>祝福</span></button>
       <button data-tool="incite" title="反乱扇動: 近くの都市で独立戦争を起こす">🔥<span>扇動</span></button>
+      <button data-tool="threat" title="神のいたずら: 地図をクリックした場所に世界の脅威を呼び出す (同時に1つまで)">⚠️<span>脅威</span></button>
+      <div id="threat-pick" hidden>
+        <div class="tp-title">神のいたずら — 呼び出す脅威を選んで地図をクリック</div>
+        <div class="tp-row">
+          <button data-ttype="random" class="on">🎲 おまかせ</button>
+          <button data-ttype="demon">👿 魔王軍</button>
+          <button data-ttype="dragon">🐉 古竜</button>
+          <button data-ttype="undead">💀 不死の軍勢</button>
+        </div>
+      </div>
     </div>
 
     <svg id="compass" viewBox="-50 -50 100 100" aria-hidden="true">
@@ -216,7 +226,7 @@
         <li>🌿 <b>世界自然遺産</b>: 大瀑布・霊峰・神木などが地図にランダムに現れ、都市と同じように奪い合えます。持つ国にボーナス</li>
         <li>📖 <b>歴史書</b>: これまでの歴史を時代ごとの章立てで読めます。名場面は吟遊詩人が詩にします</li>
         <li>🔊 から <b>BGM</b>（ゆったりした生成音楽。戦乱が増えると少し暗い曲調に）と<b>効果音</b>をそれぞれON/OFF・音量調整できます。画面を一度タップすると音が鳴り始めます</li>
-        <li>神の手: ☠️疫病 / 🌋天災 / ✨祝福 / 🔥反乱扇動</li>
+        <li>神の手: ☠️疫病 / 🌋天災 / ✨祝福 / 🔥反乱扇動 / ⚠️脅威（神のいたずらで世界の脅威を好きな場所に呼び出す。同時に1つまで）</li>
         <li>大陸エディタでは<b>陸と海を描くだけ</b>。山や森、砂漠、川は自動生成されます。首都の位置も指定できます</li>
       </ul>
       <div class="actions"><span class="spacer"></span><button id="help-close" class="primary">閉じる</button></div>

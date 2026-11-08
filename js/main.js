@@ -237,6 +237,7 @@
   }
   function renderBanner() {
     const sim = app.sim, el = $('#threat-banner');
+    $('#godbar [data-tool="threat"]').classList.toggle('disabled', !!sim.threat);
     let html = '', pos = null;
     if (sim.threat) {
       const th = sim.threat, lair = sim.cities[th.lair];
@@ -700,10 +701,20 @@
   // ---------- 神の手 ----------
   $$('#godbar [data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
   function setTool(t) {
+    if (t === 'threat' && app.sim && app.sim.threat) {
+      toast(`⚠️ すでに世界の脅威「${app.sim.threat.name}」が存在します。討伐されるまで次の脅威は呼べません`);
+      t = 'look';
+    }
     app.tool = t; R.tool = t;
     $$('#godbar [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
     canvas.classList.toggle('tool', t !== 'look');
+    $('#threat-pick').hidden = t !== 'threat';
   }
+  app.threatType = 'random';
+  $$('#threat-pick [data-ttype]').forEach(b => b.addEventListener('click', () => {
+    app.threatType = b.dataset.ttype;
+    $$('#threat-pick [data-ttype]').forEach(x => x.classList.toggle('on', x === b));
+  }));
 
   function handleClick(sx, sy) {
     TW.Audio.unlock();
@@ -731,6 +742,13 @@
       case 'incite': {
         const err = sim.godIncite(c.fx - 0.5, c.fy - 0.5);
         if (err) toast(err);
+        break;
+      }
+      case 'threat': {
+        if (sim.threat) { toast(`⚠️ すでに世界の脅威「${sim.threat.name}」が存在します`); setTool('look'); break; }
+        const n = sim.spawnThreat(app.threatType === 'random' ? null : app.threatType, { x: c.fx - 0.5, y: c.fy - 0.5 }, true);
+        if (!n) { toast('ここには呼び出せません。陸地（都市の真上以外）をクリックしてください'); break; }
+        setTool('look');
         break;
       }
     }

@@ -1152,13 +1152,13 @@
     }
 
     drawCursor() {
-      if (!this.mouse || !['plague', 'disaster', 'incite'].includes(this.tool)) return;
+      if (!this.mouse || !['plague', 'disaster', 'incite', 'threat'].includes(this.tool)) return;
       const ctx = this.ctx, S = this.S, px = this.ui / this.cam.z;
       const p = this.screenToWorld(this.mouse.x, this.mouse.y);
-      const R = (this.tool === 'plague' ? 10 : this.tool === 'disaster' ? 7 : 1.5) * S;
+      const R = (this.tool === 'plague' ? 10 : this.tool === 'disaster' ? 7 : this.tool === 'threat' ? 3 : 1.5) * S;
       ctx.save();
       ctx.setLineDash([6 * px, 4 * px]);
-      ctx.strokeStyle = this.tool === 'plague' ? 'rgba(70,110,30,0.95)' : this.tool === 'disaster' ? 'rgba(120,50,10,0.95)' : 'rgba(200,40,20,0.95)';
+      ctx.strokeStyle = this.tool === 'plague' ? 'rgba(70,110,30,0.95)' : this.tool === 'disaster' ? 'rgba(120,50,10,0.95)' : this.tool === 'threat' ? 'rgba(130,30,110,0.95)' : 'rgba(200,40,20,0.95)';
       ctx.lineWidth = 2 * px;
       ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();

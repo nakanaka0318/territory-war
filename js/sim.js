@@ -1078,15 +1078,28 @@
     }
 
     // ---------- 世界の脅威 ----------
-    spawnThreat(forceKey) {
-      if (this.threat) return null;
+    spawnThreat(forceKey, at, byGod) {
+      if (this.threat) return null;  // 世界の脅威は同時に1つだけ
       const r = this.rand, w = this.w, W = w.W;
       const def = forceKey ? THREATS.find(t => t.key === forceKey) : THREATS[Math.floor(r() * THREATS.length)];
       const alive = this.aliveNations();
       const caps = alive.map(n => this.cities[n.capital]);
       // 拠点: 首都から遠い陸地 (不死の軍勢は最大の古戦場)
       let best = -1, bs = -1;
-      if (def.key === 'undead' && this.battlefields.length) {
+      if (at) {
+        // 神が指さした場所の近くの陸地
+        let bd = 81;
+        for (let dy = -8; dy <= 8; dy++) for (let dx = -8; dx <= 8; dx++) {
+          const x = Math.round(at.x) + dx, y = Math.round(at.y) + dy;
+          if (x < 1 || y < 1 || x >= W - 1 || y >= w.H - 1) continue;
+          const i = y * W + x, d = dx * dx + dy * dy;
+          if (d >= bd || !w.land[i] || this.cityAt[i] >= 0) continue;
+          if (this.cities.some(c => (c.x - x) ** 2 + (c.y - y) ** 2 < 4)) continue;
+          bd = d; best = i;
+        }
+        if (best < 0) return null;
+      }
+      if (best < 0 && def.key === 'undead' && this.battlefields.length) {
         const bf = this.battlefields.slice().sort((a, b) => b.total - a.total)[0];
         best = bf.y * W + bf.x;
         if (!w.land[best] || this.cityAt[best] >= 0) best = -1;
@@ -1144,7 +1157,7 @@
       this.lastThreatYear = this.year();
       let place = null, pd = 60 * 60;
       for (const c of this.cities) { if (c === lair || c.wasLair) continue; const d = (c.x - lair.x) ** 2 + (c.y - lair.y) ** 2; if (d < pd) { pd = d; place = c; } }
-      this.addLog('threat', `${def.icon} 世界の脅威 — ${n.name}が${place ? place.name + 'の彼方' : '辺境'}に出現! ${def.desc}。諸国は争いをやめ、世界連合を結成した`, lair, true, [n]);
+      this.addLog('threat', `${def.icon} 世界の脅威 — ${byGod ? '神のいたずらにより、' : ''}${n.name}が${place ? place.name + 'の彼方' : '辺境'}に出現! ${def.desc}。諸国は争いをやめ、世界連合を結成した`, lair, true, [n]);
       this.addPoem('threat', { name: n.name, lair: def.lair }, lair, [n]);
       this.effect('threat', lair.x, lair.y, 10);
       if (def.key === 'dragon') {

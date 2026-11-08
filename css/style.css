@@ -303,7 +303,7 @@ ul.help { padding-left: 20px; line-height: 1.7; font-size: 14px; }
 
 /* 実況テロップ */
 #ticker {
-  position: absolute; left: 320px; right: 360px; bottom: 16px; z-index: 6;
+  position: absolute; left: 370px; right: 360px; bottom: 16px; z-index: 6;
   display: flex; align-items: center; gap: 10px; padding: 8px 14px;
   background: linear-gradient(90deg, rgba(42, 30, 20, 0.94), rgba(60, 42, 26, 0.94));
   color: #fbeccb; border: 1px solid #c9a35f; border-radius: 6px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
@@ -404,4 +404,20 @@ body.has-banner #toasts { top: 60px; }
   #threat-banner { left: 56px; right: 10px; top: 4px; font-size: 11.5px; padding: 3px 8px; }
   body:not(.panel-hidden) #threat-banner { right: calc(min(300px, 40vw) + 14px); }
   body.has-banner #toasts { top: 44px; }
+}
+
+/* 神のいたずら: 脅威の選択 */
+#threat-pick {
+  position: absolute; left: 0; bottom: calc(100% + 8px); width: max-content; max-width: calc(100vw - 24px);
+  padding: 8px 10px; border-radius: 6px; z-index: 5;
+  background: linear-gradient(90deg, rgba(60, 10, 50, 0.96), rgba(100, 20, 40, 0.96)); border: 1px solid #d48ab0; color: #ffe8f2;
+}
+#threat-pick[hidden] { display: none; }
+#threat-pick .tp-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+#threat-pick .tp-row { display: flex; gap: 5px; flex-wrap: wrap; }
+#godbar #threat-pick button { flex-direction: row; min-width: 0; font-size: 13px; padding: 4px 8px; color: #ffe8f2; border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(255, 255, 255, 0.08); }
+#godbar #threat-pick button.on { background: rgba(255, 200, 230, 0.3); border-color: #ffd0ea; font-weight: 700; }
+#godbar button.disabled { opacity: 0.4; }
+@media (max-height: 520px) and (orientation: landscape) {
+  #threat-pick { left: calc(100% + 8px); bottom: auto; top: 0; }
 }
