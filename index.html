@@ -19,11 +19,13 @@
     <div class="group" id="speed">
       <button id="btn-play" class="icon" title="一時停止 / 再開 (Space)">⏸</button>
       <button data-speed="0" title="x0.5 (1)">½</button>
-      <button data-speed="1" class="on" title="x1 (2)">1</button>
+      <button data-speed="1" title="x1 (2)">1</button>
       <button data-speed="2" title="x2 (3)">2</button>
-      <button data-speed="3" title="x4 (4)">4</button>
+      <button data-speed="3" class="on" title="x4 (4)">4</button>
       <button data-speed="4" title="x8 (5)">8</button>
-      <button id="btn-speed" title="速度を切り替え">x1</button>
+      <button data-speed="5" title="x16 (6)">16</button>
+      <button data-speed="6" title="x32 (7)">32</button>
+      <button id="btn-speed" title="速度を切り替え">x4</button>
     </div>
     <div class="spacer"></div>
     <div class="group">
@@ -195,7 +197,7 @@
       <p>NPCの国々が勝手に領土を広げ、戦争・同盟・反乱を繰り返します。あなたはそれを眺めるだけ。ときどき神として介入もできます。</p>
       <ul class="help">
         <li><b>ドラッグ</b>で地図を移動、<b>ホイール / ピンチ</b>で拡大縮小</li>
-        <li><b>Space</b> 一時停止、<b>1〜5</b> 速度変更</li>
+        <li><b>Space</b> 一時停止、<b>1〜7</b> 速度変更 (½・1・2・4・8・16・32倍)</li>
         <li>国をクリックすると<b>国情報</b>（領土・兵力・同盟・戦争・歴史）</li>
         <li>赤い点線は<b>戦争中の前線</b>、矢印は<b>軍の進軍先</b>、赤い輪は<b>攻囲中の都市</b></li>
         <li>山・森・丘は守りやすく、川は越えにくい。軍は船で海も渡ります</li>

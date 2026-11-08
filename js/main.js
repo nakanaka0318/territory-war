@@ -3,8 +3,9 @@
 (function () {
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
-  const SPEEDS = [0.5, 1, 2, 4, 8];
-  const TPS = 10; // x1 のときの1秒あたりティック数
+  const SPEEDS = [0.5, 1, 2, 4, 8, 16, 32];
+  const SPEED_LABELS = ['½', '1', '2', '4', '8', '16', '32'];
+  const TPS = 2.5; // x1 のときの1秒あたりティック数 (x4 で年4.8秒、x32 で年0.6秒)
   const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️', wonder: '🏛️', poem: '🪕', op: '🎯', army: '🚩', siege: '🔥', fort: '🏯', general: '🎖️', nature: '🌿' };
   const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture', 'poem', 'op', 'general', 'nature']);
 
@@ -13,7 +14,7 @@
   const editor = new TW.Editor();
   const comm = new TW.Commentary(R, document.querySelector('#ticker'));
   const app = {
-    sim: null, world: null, editing: false, paused: false, speed: 1, acc: 0,
+    sim: null, world: null, editing: false, paused: false, speed: 3, acc: 0,
     tool: 'look', settings: { type: 'random', seed: '', nations: 8, saved: '' },
   };
   window.app = app; // デバッグ用
@@ -421,7 +422,7 @@
   function setSpeed(k) {
     app.speed = k;
     $$('#speed [data-speed]').forEach(b => b.classList.toggle('on', +b.dataset.speed === k));
-    $('#btn-speed').textContent = 'x' + ['½', '1', '2', '4', '8'][k];
+    $('#btn-speed').textContent = 'x' + SPEED_LABELS[k];
     setPaused(false);
   }
   $('#btn-speed').addEventListener('click', () => setSpeed((app.speed + 1) % SPEEDS.length));
@@ -771,7 +772,7 @@
   window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
     if (e.code === 'Space') { e.preventDefault(); if (app.editing) spaceHeld = true; else setPaused(!app.paused); }
-    else if (/^Digit[1-5]$/.test(e.code) && !app.editing) setSpeed(+e.code.slice(5) - 1);
+    else if (/^Digit[1-7]$/.test(e.code) && !app.editing) setSpeed(+e.code.slice(5) - 1);
     else if (e.key === '+' || e.key === '=') R.zoomAt(R.cw / 2, R.ch / 2, 1.25);
     else if (e.key === '-') R.zoomAt(R.cw / 2, R.ch / 2, 0.8);
     else if (e.key === 'Escape') { setTool('look'); $$('.modal').forEach(m => m.hidden = true); }
