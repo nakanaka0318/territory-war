@@ -4,8 +4,8 @@ TW.HistoryBook = (function () {
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const KANJI = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
   const num = k => (k <= 10 ? KANJI[k - 1] : k < 20 ? '十' + KANJI[k - 11] : k < 100 ? KANJI[Math.floor(k / 10) - 1] + '十' + (k % 10 ? KANJI[k % 10 - 1] : '') : String(k));
-  const ICON = { op: '🎯', general: '🎖️', nature: '🌿', war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', wonder: '🏛️', poem: '🪕' };
-  const RANK = { op: 3, general: 4, nature: 2, capital: 6, destroy: 6, wonder: 5, betray: 5, rebel: 4, culture: 3, god: 3, battle: 3, war: 2, peace: 1, alliance: 1 };
+  const ICON = { threat: '⚠️', coalition: '⚔', op: '🎯', general: '🎖️', nature: '🌿', war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', wonder: '🏛️', poem: '🪕' };
+  const RANK = { threat: 7, coalition: 5, op: 3, general: 4, nature: 2, capital: 6, destroy: 6, wonder: 5, betray: 5, rebel: 4, culture: 3, god: 3, battle: 3, war: 2, peace: 1, alliance: 1 };
 
   function chapters(sim) {
     const now = sim.year();
@@ -30,7 +30,9 @@ TW.HistoryBook = (function () {
       const turmoil = ev.filter(x => x.type === 'destroy' || x.type === 'rebel').length;
       const wars = snaps.length ? warsSum / snaps.length : 0;
       let title;
+      const th = (sim.threatHistory || []).find(t => t.start >= s && t.start <= e);
       if (s === 1) title = '建国の時代';
+      else if (th) title = `${th.name}の災厄`;
       else if (domName && domShare > 0.3 && dc >= snaps.length * 0.6) title = `${domName}の覇権`;
       else if (turmoil > 14) title = '動乱の時代';
       else if (wars < 1.5) title = '平和と繁栄の時代';
@@ -131,6 +133,9 @@ TW.HistoryBook = (function () {
       <nav class="toc"><h3>目次</h3><ol>${toc}<li><a href="#bk-greats">大国の興亡</a></li><li><a href="#bk-generals">名将列伝</a></li><li><a href="#bk-battles">古戦場</a></li><li><a href="#bk-nature">世界自然遺産</a></li><li><a href="#bk-wonders">世界の驚異</a></li><li><a href="#bk-poems">吟遊詩人の歌</a></li><li><a href="#bk-now">今の世界</a></li></ol></nav>
       ${body}
       <section id="bk-greats"><h2>大国の興亡</h2><table class="gt"><thead><tr><th>国</th><th>在位</th><th>最大版図</th><th>攻略都市</th><th>文化の頂点</th></tr></thead><tbody>${greatHtml}</tbody></table></section>
+      ${(sim.threatHistory.length || sim.coalitionHistory.length) ? `<section id="bk-threats"><h2>世界の脅威と大同盟</h2><ul class="ev">${
+        sim.threatHistory.map(t => `<li>${t.icon} <b>${esc(t.name)}</b>（${t.start}年〜${t.end}年）— ${t.hero ? esc(t.hero) + (t.gen ? 'の' + esc(t.gen) : '') + 'が討伐' : '討伐'}${t.kills ? `・焼かれた都市${t.kills}` : ''}</li>`).join('')}${
+        sim.coalitionHistory.map(c => `<li>⚔ <b>${esc(c.name)}</b>（${c.start}年〜${c.end}年）— ${c.members.length}か国が${esc(c.target)}を包囲、${c.result === '成功' ? '覇権を抑え込んだ' : '覇権国は耐え抜いた'}</li>`).join('')}</ul></section>` : ''}
       <section id="bk-generals"><h2>名将列伝</h2>${genHtml ? `<table class="gt"><thead><tr><th>将軍</th><th>戦績</th><th>攻略</th><th>名高き戦い</th><th>生涯</th></tr></thead><tbody>${genHtml}</tbody></table>` : '<p class="dim">まだ名将は現れていない。</p>'}</section>
       <section id="bk-battles"><h2>古戦場</h2>${bfHtml ? `<ul class="ev">${bfHtml}</ul>` : '<p class="dim">まだ大会戦は起きていない。</p>'}</section>
       <section id="bk-nature"><h2>世界自然遺産</h2><ul class="wl">${natHtml}</ul></section>

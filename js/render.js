@@ -472,6 +472,15 @@
       this.drawArmies();
       this.drawEffects(now);
       this.drawCursor();
+      if (sim.threat) {
+        const c2 = this.ctx;
+        c2.setTransform(1, 0, 0, 1, 0, 0);
+        const W2 = this.cv.width, H2 = this.cv.height;
+        const pulse = 0.16 + Math.sin(now / 900) * 0.04;
+        const g = c2.createRadialGradient(W2 / 2, H2 / 2, Math.min(W2, H2) * 0.35, W2 / 2, H2 / 2, Math.max(W2, H2) * 0.75);
+        g.addColorStop(0, 'rgba(40,0,30,0)'); g.addColorStop(1, `rgba(60,0,40,${pulse})`);
+        c2.fillStyle = g; c2.fillRect(0, 0, W2, H2);
+      }
     }
 
     armyPos(a) {
@@ -546,6 +555,27 @@
           ctx.strokeStyle = c.dev >= 10 ? 'rgba(200,150,30,0.95)' : 'rgba(50,34,22,0.75)';
           ctx.setLineDash(c.dev >= 10 ? [] : [2.2 * px, 1.4 * px]);
           ctx.stroke(); ctx.setLineDash([]);
+        }
+        if (c.lair && n && n.isThreat) {
+          // 世界の脅威の拠点: 禍々しいオーラと結界
+          const th = sim.threat;
+          const def = TW.THREATS.find(d => d.key === c.lair);
+          const tt = performance.now() / 1000;
+          const R0 = (22 + Math.sin(tt * 2) * 3) * px;
+          const g = ctx.createRadialGradient(x, y, 0, x, y, R0 * 1.6);
+          g.addColorStop(0, `rgba(${n.color[0]},${n.color[1]},${n.color[2]},0.55)`); g.addColorStop(1, 'rgba(20,0,20,0)');
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R0 * 1.6, 0, Math.PI * 2); ctx.fill();
+          if (th && sim.t - th.start < TW.TPY * 5) {
+            ctx.strokeStyle = `rgba(190,140,255,${0.5 + Math.sin(tt * 4) * 0.25})`; ctx.lineWidth = 2 * px;
+            ctx.setLineDash([4 * px, 3 * px]); ctx.beginPath(); ctx.arc(x, y, 16 * px, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+          }
+          ctx.save(); ctx.textAlign = 'center'; ctx.font = `${22 * px}px serif`; ctx.fillStyle = '#000';
+          ctx.fillText(def ? def.icon : '☠', x, y + 1 * px);
+          ctx.font = `900 ${11 * px}px ${FONT}`;
+          ctx.lineWidth = 3 * px; ctx.strokeStyle = 'rgba(30,0,20,0.85)'; ctx.strokeText(c.name, x, y + 20 * px);
+          ctx.fillStyle = 'rgb(255,210,230)'; ctx.fillText(c.name, x, y + 20 * px);
+          ctx.restore();
+          continue;
         }
         if (c.nat) {
           // 世界自然遺産
@@ -800,6 +830,46 @@
         dir = [sm[0] / sl, sm[1] / sl];
         this.dirs.set(a.id, dir);
         const perp = [-dir[1], dir[0]];
+        if (n.isThreat) {
+          const def = TW.THREATS.find(d => d.key === n.threat);
+          if (a.flying) {
+            // 古竜: 大きな影と羽ばたき
+            const flap = 1 + Math.sin(t * 7 + a.id) * 0.08;
+            ctx.fillStyle = 'rgba(20,10,10,0.3)';
+            ctx.beginPath(); ctx.ellipse(x, y + 8 * px, 16 * px * flap, 5 * px, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.translate(x, y - 10 * px - Math.sin(t * 3) * 3 * px); ctx.scale(dir[0] < 0 ? 1 : -1, 1);
+            ctx.fillStyle = '#000'; ctx.font = `${34 * px * flap}px serif`; ctx.fillText('🐉', 0, 0);
+            ctx.restore();
+            if (zs >= 2) {
+              ctx.font = `700 ${9.5 * px}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+              const label = `${n.name} ${TW.fmtTroops(a.str)}`;
+              ctx.lineWidth = 2.6 * px; ctx.strokeStyle = 'rgba(40,0,0,0.85)'; ctx.strokeText(label, x, y + 12 * px);
+              ctx.fillStyle = 'rgb(255,200,170)'; ctx.fillText(label, x, y + 12 * px);
+            }
+            continue;
+          }
+          if (showSoldiers) {
+            const count = TW.clamp(Math.round(Math.sqrt(a.str) * 2.2), 4, 26);
+            ctx.font = `${8 * px * TW.clamp(zs / 10, 0.8, 1.3)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#000';
+            for (let k = 0; k < count; k++) {
+              const row = Math.floor(k / 5), col = (k % 5) - 2;
+              const f = a.fighting ? 1.4 + row * 0.7 + Math.sin(t * 9 + k) * 0.3 : -(row + 1) * 1.1;
+              const sp = 4.6 * px * TW.clamp(zs / 10, 0.75, 1.25);
+              const sx = x + (dir[0] * f + perp[0] * col * 1.05) * sp, sy = y + (dir[1] * f + perp[1] * col * 1.05) * sp + Math.sin(t * 8 + k) * 0.8 * px;
+              ctx.fillText(def.unit, sx, sy);
+            }
+          }
+          ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#000'; ctx.font = `${17 * px}px serif`; ctx.fillText(def.icon, x, y - 8 * px); ctx.restore();
+          if (zs >= 3) {
+            ctx.font = `700 ${9.5 * px}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            const label = TW.fmtTroops(a.str);
+            ctx.lineWidth = 2.6 * px; ctx.strokeStyle = 'rgba(40,0,20,0.85)'; ctx.strokeText(label, x, y + 5 * px);
+            ctx.fillStyle = 'rgb(255,200,230)'; ctx.fillText(label, x, y + 5 * px);
+          }
+          continue;
+        }
         if (!sea && showSoldiers) {
           const count = TW.clamp(Math.round(Math.sqrt(a.str) * 2.4), 3, 28);
           const moving = a.path && a.pi < a.path.length && !a.fighting;
@@ -994,8 +1064,8 @@
       ctx.save();
       const keep = [];
       for (const e of sim.effects) {
-        const dur = ['plague', 'disaster', 'bless'].includes(e.type) ? 4500 : 2600;
-        const k = (now - e.born) / dur;
+        const dur = e.type === 'threat' ? 7000 : ['plague', 'disaster', 'bless'].includes(e.type) ? 4500 : 2600;
+        const k = Math.max(0, (now - e.born) / dur);
         if (k >= 1) continue;
         keep.push(e);
         const x = (e.x + 0.5) * S, y = (e.y + 0.5) * S, R = e.r * S;
@@ -1009,6 +1079,15 @@
           ctx.beginPath(); ctx.moveTo(0, -17 * px); ctx.lineTo(12 * px, -15 * px); ctx.lineTo(12 * px, -9 * px); ctx.lineTo(0, -10 * px); ctx.closePath();
           ctx.fillStyle = e.color || '#888'; ctx.fill(); ctx.stroke();
           ctx.restore();
+          continue;
+        }
+        if (e.type === 'threat') {
+          for (let q = 0; q < 4; q++) {
+            const kk = TW.clamp(k * 1.3 - q * 0.12, 0, 1);
+            ctx.globalAlpha = (1 - kk) * 0.9; ctx.beginPath(); ctx.arc(x, y, R * (0.2 + kk * 1.5), 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgb(120,20,90)'; ctx.lineWidth = 4 * px; ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
           continue;
         }
         if (e.type === 'merge') {

@@ -64,6 +64,7 @@ TW.Commentary = (function () {
                 : '戦力はほぼ互角、長い戦いになりそうです！';
           }
           if (/参戦/.test(e.text)) this.push(`${a}が同盟に応えて参戦！戦火が広がっていきます！`, 2, pos);
+          else if (/海を越えて/.test(e.text)) this.push(`なんと${a}が海を越えて${b}に宣戦布告！大艦隊による遠征が始まります！`, 4, pos);
           else this.push(pick([`おっと！${a}が${b}に宣戦布告！`, `${a}、ついに動いた！標的は${b}です！`, `戦争です！${a}対${b}！`]) + ' ' + tail, e.major ? 4 : 3, pos);
           break;
         }
@@ -125,6 +126,16 @@ TW.Commentary = (function () {
           break;
         case 'nature':
           this.push(`${e.text}！大自然の恵みが国を潤します。`, 2, pos);
+          break;
+        case 'threat':
+          if (/出現/.test(e.text)) this.push(`緊急事態です！${e.text.replace(/^.*?— /, '').replace(/!.*$/, '')}！各国は争いをやめ、世界連合として立ち向かいます！`, 6, pos);
+          else if (/討たる/.test(e.text)) this.push(`やりました！${e.text.replace(/^\S+ /, '')}！世界に平和が戻ります！`, 6, pos);
+          else if (e.major) this.push(`${e.text}！なんという惨状でしょう！`, 4, pos);
+          else if (Math.random() < 0.4) this.push(`${e.text}…被害が広がっています！`, 3, pos);
+          break;
+        case 'coalition':
+          if (/結成/.test(e.text)) this.push(`包囲網です！${e.text}`, 5, pos);
+          else this.push(e.text, 3, pos);
           break;
         case 'poem':
           if (e.poem) this.push(`「${e.poem.lines[0]}／${e.poem.lines[1]}」— ${e.poem.title}`, 2, pos, '🪕 吟遊詩人');

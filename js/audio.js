@@ -109,6 +109,7 @@ TW.Audio = (function () {
     betray() { pad(N.A4, 0.4, 0.1); pad(N.E4, 0.9, 0.1, 0.25); },
     culture() { [N.C5, N.D5, N.E5, N.G5, N.A5].forEach((f, k) => bell(f, 0.6, 0.045, k * 0.07)); },
     develop() { bell(N.G5, 0.5, 0.035); bell(N.C6, 0.6, 0.03, 0.08); },
+    threat() { bell(N.C2 * 2, 3.2, 0.2); bell(N.G2, 3.4, 0.14, 0.05); noise(2.2, { gain: 0.12, freq: 160, attack: 0.6 }); pad(N.C3, 2.6, 0.08, 0.4); pad(N.G3, 2.4, 0.05, 0.8); },
     plague() { pad(N.C3, 1.6, 0.12); pad(N.G3, 1.6, 0.06, 0.1); noise(1.2, { gain: 0.04, freq: 300, attack: 0.5 }); },
     disaster() { noise(1.4, { gain: 0.18, freq: 120, attack: 0.05 }); tone(N.C2, 1.4, { gain: 0.2 }); },
     bless() { [N.C5, N.E5, N.G5, N.C6].forEach((f, k) => bell(f, 0.9, 0.06, k * 0.09)); },
@@ -116,7 +117,7 @@ TW.Audio = (function () {
   };
   const last = {};
   const minGap = { battle: 1500, capture: 900, war: 1200, peace: 1200, alliance: 1200, capital: 1500, destroy: 1500, rebel: 1200, betray: 1500, develop: 2500, culture: 1500 };
-  const PRIORITY = { destroy: 5, capital: 5, rebel: 4, betray: 4, war: 3, culture: 3, peace: 2, alliance: 2, capture: 1, battle: 1, develop: 0 };
+  const PRIORITY = { threat: 6, destroy: 5, capital: 5, rebel: 4, betray: 4, war: 3, culture: 3, peace: 2, alliance: 2, capture: 1, battle: 1, develop: 0 };
   let lastAny = 0;
 
   // ---------- BGM: ゆったりした生成音楽 ----------

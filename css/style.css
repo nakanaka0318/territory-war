@@ -377,3 +377,31 @@ h4.sec { margin: 14px 0 4px; font-size: 14px; border-top: 1px dashed var(--line)
 #generals li, #naturals li { display: flex; gap: 8px; align-items: center; padding: 4px 2px; border-bottom: 1px dotted var(--line); font-size: 13px; }
 #generals li[data-army], #naturals li[data-city] { cursor: pointer; }
 #generals li[data-army]:hover, #naturals li[data-city]:hover { background: rgba(122, 93, 60, 0.12); }
+
+/* 世界の脅威・大同盟のバナー */
+#threat-banner {
+  position: absolute; top: 8px; left: 60px; right: 360px; z-index: 6; display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px; border-radius: 6px; font-size: 13.5px; line-height: 1.45; color: #ffe8f2;
+  background: linear-gradient(90deg, rgba(60, 10, 50, 0.95), rgba(100, 20, 40, 0.95)); border: 1px solid #d48ab0;
+  box-shadow: 0 0 18px rgba(120, 20, 80, 0.6); animation: threatGlow 2.4s ease-in-out infinite;
+}
+#threat-banner[hidden] { display: none; }
+#threat-banner.coalition { background: linear-gradient(90deg, rgba(90, 30, 18, 0.95), rgba(60, 40, 20, 0.95)); border-color: #c9a35f; color: #fff1d6; animation: none; }
+#threat-banner .ic { font-size: 22px; }
+#threat-banner .msg { flex: 1; }
+#threat-banner .goto { background: rgba(255, 255, 255, 0.15); color: inherit; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+@keyframes threatGlow { 50% { box-shadow: 0 0 30px rgba(170, 30, 110, 0.85); } }
+body.panel-hidden #threat-banner { right: 12px; }
+body.has-banner #toasts { top: 60px; }
+.tag.threat { color: #fff; background: #6a1a50; border-color: #6a1a50; }
+.tag.hero { color: #7a5a00; border-color: #c9a35f; background: rgba(201, 163, 95, 0.2); }
+@media (max-width: 760px) and (orientation: portrait) {
+  #threat-banner { left: 46px; right: 6px; top: 6px; font-size: 11.5px; padding: 5px 8px; }
+  #threat-banner .ic { font-size: 18px; }
+  body.has-banner #toasts { top: 70px; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  #threat-banner { left: 56px; right: 10px; top: 4px; font-size: 11.5px; padding: 3px 8px; }
+  body:not(.panel-hidden) #threat-banner { right: calc(min(300px, 40vw) + 14px); }
+  body.has-banner #toasts { top: 44px; }
+}

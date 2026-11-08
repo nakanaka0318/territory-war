@@ -6,8 +6,8 @@
   const SPEEDS = [0.5, 1, 2, 4, 8, 16, 32];
   const SPEED_LABELS = ['½', '1', '2', '4', '8', '16', '32'];
   const TPS = 2.5; // x1 のときの1秒あたりティック数 (x4 で年4.8秒、x32 で年0.6秒)
-  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️', wonder: '🏛️', poem: '🪕', op: '🎯', army: '🚩', siege: '🔥', fort: '🏯', general: '🎖️', nature: '🌿' };
-  const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture', 'poem', 'op', 'general', 'nature']);
+  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️', wonder: '🏛️', poem: '🪕', op: '🎯', army: '🚩', siege: '🔥', fort: '🏯', general: '🎖️', nature: '🌿', threat: '⚠️', coalition: '⚔' };
+  const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture', 'poem', 'op', 'general', 'nature', 'threat', 'coalition']);
 
   const canvas = $('#map');
   const R = new TW.Renderer(canvas);
@@ -80,6 +80,9 @@
     if (!silent) {
       comm.onEvent(e, app.sim);
       if (e.type === 'wonder' && e.major) { TW.Audio.play('culture'); toast(`${ICON.wonder} ${e.text}`, e); }
+      if (e.type === 'threat' && e.major) { TW.Audio.play(/討たる/.test(e.text) ? 'bless' : /出現/.test(e.text) ? 'threat' : 'capital'); toast(e.text, e); }
+      else if (e.type === 'threat') TW.Audio.play('capture');
+      if (e.type === 'coalition') { TW.Audio.play('war'); toast(`⚔ ${e.text}`, e); }
       const snd = { war: 'war', peace: 'peace', alliance: 'alliance', capture: 'capture', capital: 'capital', destroy: 'destroy', rebel: 'rebel', betray: 'betray', culture: 'culture', develop: 'develop' }[e.type];
       if (snd && (e.type !== 'war' || e.major || Math.random() < 0.5) && (e.type !== 'develop' || e.major)) TW.Audio.play(snd);
       if (e.type === 'battle' && e.major) TW.Audio.play('battle');
@@ -198,6 +201,7 @@
     lastPanel = now;
     const sim = app.sim;
     if (!sim) return;
+    renderBanner();
     if (activeTab === 'rank') { renderRanking(); renderWonders(); renderGenerals(); renderNaturals(); }
     else if (activeTab === 'graph') renderGraph();
     else if (activeTab === 'detail') renderDetail();
@@ -218,13 +222,43 @@
     const max = alive.length ? alive[0].cells : 1;
     $('#ranking').innerHTML = alive.map((n, k) => {
       const pct = (n.cells / sim.landCount * 100).toFixed(1);
-      const tags = (n.wars ? `<span class="tag war">交戦${n.wars}</span>` : '') + (n.allies ? `<span class="tag ally">同盟${n.allies}</span>` : '');
+      const co = sim.coalition;
+      const tags = (n.isThreat ? '<span class="tag threat">世界の脅威</span>' : '') +
+        (co && co.target === n.id ? '<span class="tag war">覇権国</span>' : '') +
+        (co && co.members.includes(n.uid) ? '<span class="tag ally">大同盟</span>' : '') +
+        (n.heroTitle ? `<span class="tag hero">${escapeHtml(n.heroTitle)}</span>` : '') +
+        (!n.isThreat && n.wars ? `<span class="tag war">交戦${n.wars}</span>` : '') + (n.allies ? `<span class="tag ally">同盟${n.allies}</span>` : '');
       return `<li data-uid="${n.uid}" class="${n.uid === app.selected ? 'sel' : ''}"><span class="rk">${k + 1}</span>` +
         `<span class="nm"><span class="sw" style="background:${n.css}"></span><span class="t">${escapeHtml(n.name)}</span>${tags}</span>` +
         `<span class="pc">${pct}%</span>` +
         `<span class="bar"><i style="width:${n.cells / max * 100}%;background:${n.css}"></i></span>` +
         `<span class="sub">都市 ${n.cityCount}　兵 ${TW.fmtTroops(n.manpower + n.armyStr)}　軍団 ${n.armyCount}　🎭${TW.ERAS[n.era].name}</span></li>`;
     }).join('');
+  }
+  function renderBanner() {
+    const sim = app.sim, el = $('#threat-banner');
+    let html = '', pos = null;
+    if (sim.threat) {
+      const th = sim.threat, lair = sim.cities[th.lair];
+      const yrs = Math.floor((sim.t - th.start) / TW.TPY);
+      const tArmies = sim.armies.filter(a => a.n === th.nId);
+      const barrier = sim.t - th.start < TW.TPY * 5 ? '・拠点は結界に守られている' : '';
+      html = `<span class="ic">${th.def.icon}</span><span class="msg"><b>世界の脅威: ${escapeHtml(th.name)}</b>　出現から${yrs}年・軍勢${tArmies.length}・兵${TW.fmtTroops(tArmies.reduce((s, a) => s + a.str, 0))}${barrier}　— 世界連合が対抗中</span>`;
+      pos = lair;
+      el.className = 'threat';
+    } else if (sim.coalition) {
+      const co = sim.coalition, t = sim.nations[co.target];
+      html = `<span class="ic">⚔</span><span class="msg"><b>${escapeHtml(co.name)}</b>　${co.members.length}か国が覇権国${escapeHtml(co.tname)}（領土${t ? Math.round(t.cells / sim.landCount * 100) : 0}%）を包囲中</span>`;
+      pos = t && t.alive ? sim.cities[t.capital] : null;
+      el.className = 'coalition';
+    }
+    if (!html) { if (!el.hidden) { el.hidden = true; document.body.classList.remove('has-banner'); } return; }
+    if (pos) html += `<button class="goto">📍</button>`;
+    if (el.innerHTML !== html) el.innerHTML = html;
+    el.hidden = false;
+    document.body.classList.add('has-banner');
+    const b = el.querySelector('.goto');
+    if (b) b.onclick = () => { comm.userMoved(); R.centerOn(pos.x, pos.y, 5); };
   }
   function renderGenerals() {
     const sim = app.sim;
@@ -338,6 +372,17 @@
       return;
     }
     const cap = sim.cities[n.capital];
+    if (n.isThreat) {
+      const def = TW.THREATS.find(d => d.key === n.threat);
+      const tArmies = sim.armies.filter(a => a.n === n.id);
+      el.innerHTML = `<h3><span class="sw" style="background:${n.css}"></span>${def.icon} ${escapeHtml(n.name)}</h3>` +
+        `<div class="sub">世界の脅威 — ${Math.floor(n.founded / TW.TPY) + 1}年に出現</div><p>${escapeHtml(def.desc)}。</p>` +
+        `<table><tr><td>拠点</td><td>${escapeHtml(cap.name)}</td></tr><tr><td>支配する都市</td><td>${n.cityCount}</td></tr>` +
+        `<tr><td>軍勢</td><td>${tArmies.length} / ${TW.fmtTroops(tArmies.reduce((s, a) => s + a.str, 0))}</td></tr></table>` +
+        `<p class="hint">${n.threat === 'dragon' ? '古竜を倒せば討伐。' : '拠点を攻め落とせば討伐。'}世界中の国が連合して戦っています。</p>` +
+        `<div class="rel"><div class="h">記録</div><ul class="ev">${evHtml}</ul></div>`;
+      return;
+    }
     const rows = [];
     const lists = { war: [], ally: [], truce: [] };
     for (const m of sim.aliveNations()) {
@@ -360,7 +405,7 @@
     rows.push(['最大版図', `${(n.peakCells / sim.landCount * 100).toFixed(1)}%`]);
     const relBlock = (title, arr) => arr.length ? `<div class="rel"><div class="h">${title}</div>${arr.map(natLink).join('')}</div>` : '';
     el.innerHTML = `<h3><span class="sw" style="background:${n.css}"></span>${escapeHtml(n.name)}</h3>` +
-      `<div class="sub">${foundedYear}年建国${n.parentName ? `（${escapeHtml(n.parentName)}から独立）` : ''}・建国${sim.year() - foundedYear}年目</div>` +
+      `<div class="sub">${foundedYear}年建国${n.parentName ? `（${escapeHtml(n.parentName)}から独立）` : ''}・建国${sim.year() - foundedYear}年目${n.heroTitle ? `・<b>${escapeHtml(n.heroTitle)}</b>` : ''}</div>` +
       `<table>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>` +
       `<div class="rel"><div class="h">安定度 ${(n.stability * 100).toFixed(0)}%</div><div class="meter"><i style="width:${n.stability * 100}%"></i></div></div>` +
       cultureBlock(sim, n) + wonderBlock(sim, n) + militaryBlock(sim, n) +
@@ -807,6 +852,7 @@
         const bl = TW.buildingsOf(city.dev);
         html += `<br>発展度 ${city.dev.toFixed(1)} ${bl.map(b => b.icon).join('')}`;
         if (city.nat) html += `<br>🌿 世界自然遺産 — ${escapeHtml(city.natDesc)}`;
+        if (city.lair && sim.threat) html += `<br>⚠️ 世界の脅威の拠点${sim.t - sim.threat.start < TW.TPY * 5 ? '（結界に守られている）' : ' — 落とせば討伐！'}`;
         const wd = sim.wonders.find(x => x.city === city.id && x.state !== 'none');
         if (wd) html += `<br>${wd.state === 'built' ? wd.icon + ' 世界の驚異「' + escapeHtml(wd.name) + '」' : '🏚️ ' + escapeHtml(wd.name) + 'の遺跡'}`;
         if (city.besieged >= sim.t - 3) html += `<br><span style="color:#a51c12">攻囲中 — 守備 ${Math.max(0, city.defense / sim.maxDefense(city) * 100).toFixed(0)}%</span>`;
