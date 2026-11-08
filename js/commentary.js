@@ -105,6 +105,27 @@ TW.Commentary = (function () {
         case 'god':
           this.push(`神の御業か！${e.text}！`, 4, pos);
           break;
+        case 'op':
+          if (/成功/.test(e.text)) this.push(`作戦成功！${e.text.replace(/ — .*/, '')}、見事に目標を攻略しました！`, 4, pos);
+          else this.push(`${a}が作戦を発動！${e.text.replace(/^.*?が/, '')}。地図上の赤い矢印に注目です！`, 3, pos);
+          break;
+        case 'general':
+          this.push(`ああっと…${e.text}。一つの伝説が終わりました。`, 4, pos);
+          break;
+        case 'army':
+          if (/合流/.test(e.text)) this.push(`${e.text}！これは手強い！`, 2, pos);
+          else this.push(`${e.text}。二方面から攻め立てる構えです！`, 2, pos);
+          break;
+        case 'siege':
+          if (Math.random() < 0.5) this.push(`${e.text}！城内で激しい戦いです！`, 3, pos);
+          break;
+        case 'fort':
+          if (/陥落/.test(e.text)) this.push(`${e.text}！これで道が開けました！`, 3, pos);
+          else if (Math.random() < 0.3) this.push(`${e.text}。容易には突破できない要衝です。`, 1, pos);
+          break;
+        case 'nature':
+          this.push(`${e.text}！大自然の恵みが国を潤します。`, 2, pos);
+          break;
         case 'poem':
           if (e.poem) this.push(`「${e.poem.lines[0]}／${e.poem.lines[1]}」— ${e.poem.title}`, 2, pos, '🪕 吟遊詩人');
           break;

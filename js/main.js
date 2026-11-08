@@ -5,8 +5,8 @@
   const $$ = s => Array.from(document.querySelectorAll(s));
   const SPEEDS = [0.5, 1, 2, 4, 8];
   const TPS = 10; // x1 のときの1秒あたりティック数
-  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️', wonder: '🏛️', poem: '🪕' };
-  const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture', 'poem']);
+  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️', wonder: '🏛️', poem: '🪕', op: '🎯', army: '🚩', siege: '🔥', fort: '🏯', general: '🎖️', nature: '🌿' };
+  const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture', 'poem', 'op', 'general', 'nature']);
 
   const canvas = $('#map');
   const R = new TW.Renderer(canvas);
@@ -197,7 +197,7 @@
     lastPanel = now;
     const sim = app.sim;
     if (!sim) return;
-    if (activeTab === 'rank') { renderRanking(); renderWonders(); }
+    if (activeTab === 'rank') { renderRanking(); renderWonders(); renderGenerals(); renderNaturals(); }
     else if (activeTab === 'graph') renderGraph();
     else if (activeTab === 'detail') renderDetail();
   }
@@ -225,6 +225,37 @@
         `<span class="sub">都市 ${n.cityCount}　兵 ${TW.fmtTroops(n.manpower + n.armyStr)}　軍団 ${n.armyCount}　🎭${TW.ERAS[n.era].name}</span></li>`;
     }).join('');
   }
+  function renderGenerals() {
+    const sim = app.sim;
+    const active = sim.generals.filter(g => g.fate === 'active' && g.wins + g.cities > 0)
+      .sort((a, b) => (b.wins + b.cities * 2) - (a.wins + a.cities * 2)).slice(0, 8);
+    const armyOf = new Map(sim.armies.filter(a => a.gen).map(a => [a.gen.id, a]));
+    $('#generals').innerHTML = active.length ? active.map(g => {
+      const a = armyOf.get(g.id);
+      const loc = a ? ` data-army="${a.id}"` : '';
+      return `<li${loc}><span class="wi">🎖️</span><div><b>${escapeHtml(sim.genName(g))}</b> <small><span class="sw" style="background:${g.css}"></span>${escapeHtml(g.nation)}</small><br>` +
+        `<small>${g.wins}勝${g.losses}敗・攻略${g.cities}都市${g.forts ? '・' + g.forts + '砦' : ''}${a ? '・出陣中 ' + TW.fmtTroops(a.str) : '・待機中'}</small></div></li>`;
+    }).join('') : '<li class="dim">まだ名を上げた将軍はいない</li>';
+  }
+  $('#generals').addEventListener('click', ev => {
+    const li = ev.target.closest('li[data-army]');
+    if (!li) return;
+    const a = app.sim.armies.find(x => x.id === +li.dataset.army);
+    if (a) { comm.userMoved(); R.centerOn(a.x, a.y, 8); }
+  });
+  function renderNaturals() {
+    const sim = app.sim;
+    $('#naturals').innerHTML = sim.cities.filter(c => c.nat).map(c => {
+      const o = c.owner >= 0 ? sim.nations[c.owner] : null;
+      return `<li data-city="${c.id}" title="${escapeHtml(c.natDesc)}"><span class="wi">${c.icon}</span><div><b>${escapeHtml(c.name)}</b><br><small>${o ? `<span class="sw" style="background:${o.css}"></span>${escapeHtml(o.name)}` : '<span class="dim">未開の地</span>'}　${escapeHtml(c.natDesc)}</small></div></li>`;
+    }).join('') || '<li class="dim">この世界にはない</li>';
+  }
+  $('#naturals').addEventListener('click', ev => {
+    const li = ev.target.closest('li[data-city]');
+    if (!li) return;
+    const c = app.sim.cities[+li.dataset.city];
+    comm.userMoved(); R.centerOn(c.x, c.y, 7);
+  });
   function renderWonders() {
     const sim = app.sim;
     $('#wonders').innerHTML = sim.wonders.map(w => {
@@ -331,12 +362,27 @@
       `<div class="sub">${foundedYear}年建国${n.parentName ? `（${escapeHtml(n.parentName)}から独立）` : ''}・建国${sim.year() - foundedYear}年目</div>` +
       `<table>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>` +
       `<div class="rel"><div class="h">安定度 ${(n.stability * 100).toFixed(0)}%</div><div class="meter"><i style="width:${n.stability * 100}%"></i></div></div>` +
-      cultureBlock(sim, n) + wonderBlock(sim, n) +
+      cultureBlock(sim, n) + wonderBlock(sim, n) + militaryBlock(sim, n) +
       relBlock('⚔️ 交戦中', lists.war) + relBlock('🤝 同盟国', lists.ally) + relBlock('🕊️ 停戦中', lists.truce) +
       (neighbors.length ? `<div class="rel"><div class="h">隣国との関係</div>${neighbors.map(({ m, op }) => natLink(m).replace('</span>', '</span>') + `<small>${op > 0 ? '+' : ''}${op.toFixed(0)}</small>`).join(' ')}</div>` : '') +
       `<div class="rel"><button class="btn" id="goto-cap">首都へ移動</button></div>` +
       `<div class="rel"><div class="h">歴史</div><ul class="ev">${evHtml || '<li>まだ記録はない</li>'}</ul></div>`;
     $('#goto-cap').onclick = () => R.centerOn(cap.x, cap.y, 4);
+  }
+  function militaryBlock(sim, n) {
+    const armies = sim.armies.filter(a => a.n === n.id && a.gen);
+    const forts = sim.forts.filter(f => f.owner === n.id);
+    const nats = sim.cities.filter(c => c.nat && c.owner === n.id);
+    let h = '';
+    if (nats.length) h += `<div class="rel"><div class="h">🌿 世界自然遺産</div>${nats.map(c => `<div class="wown">${c.icon} <b>${escapeHtml(c.name)}</b><br><small>${escapeHtml(c.natDesc)}</small></div>`).join('')}</div>`;
+    if (armies.length) {
+      h += `<div class="rel"><div class="h">🎖️ 出陣中の将軍</div>${armies.sort((a, b) => b.str - a.str).slice(0, 8).map(a =>
+        `<div class="wown">${escapeHtml(sim.genName(a.gen))} <small>${TW.fmtTroops(a.str)}・${a.gen.wins}勝${a.gen.losses}敗</small></div>`).join('')}</div>`;
+    }
+    if (forts.length) h += `<div class="rel"><div class="h">🏯 砦</div>${forts.map(f => escapeHtml(f.name)).join('、')}</div>`;
+    const ops = sim.ops.filter(op => op.status === 'active' && op.n === n.id);
+    if (ops.length) h += `<div class="rel"><div class="h">🎯 発動中の作戦</div>${ops.map(op => `${escapeHtml(op.name)}（目標: ${escapeHtml(sim.cities[op.target].name)}）`).join('<br>')}</div>`;
+    return h;
   }
   function wonderBlock(sim, n) {
     const own = sim.wonders.filter(w => w.state === 'built' && sim.cities[w.city].owner === n.id);
@@ -746,6 +792,10 @@
       const o = sim.owner[c.i];
       if (o >= 0) { const n = sim.nations[o]; html += `<b><span class="sw" style="background:${n.css}"></span>${escapeHtml(n.name)}</b><br>`; }
       else html += '<b>未開の地</b><br>';
+      const ft = sim.forts.find(f => Math.abs(f.x - c.cx) <= 1 && Math.abs(f.y - c.cy) <= 1);
+      if (ft) html += `🏯 ${escapeHtml(ft.name)}（守備 ${Math.round(ft.hp / ft.maxHp * 100)}%）<br>`;
+      const bf = sim.battlefields.find(b => Math.abs(b.x - c.cx) <= 1 && Math.abs(b.y - c.cy) <= 1);
+      if (bf) html += `⚔ 古戦場: ${escapeHtml(bf.name)}（${bf.year}年）<br>`;
       const rl = TW.roadLevel(sim.road[c.i]);
       html += `${t.name}${w.river[c.i] ? '・川' : ''}${rl ? '・' + TW.ROAD_NAMES[rl] : ''}`;
       // 近くの都市
@@ -755,6 +805,7 @@
         html += `<br>${city.capital ? '👑 首都' : '🏘 都市'} <b>${escapeHtml(city.name)}</b> 人口${city.pop.toFixed(1)}万`;
         const bl = TW.buildingsOf(city.dev);
         html += `<br>発展度 ${city.dev.toFixed(1)} ${bl.map(b => b.icon).join('')}`;
+        if (city.nat) html += `<br>🌿 世界自然遺産 — ${escapeHtml(city.natDesc)}`;
         const wd = sim.wonders.find(x => x.city === city.id && x.state !== 'none');
         if (wd) html += `<br>${wd.state === 'built' ? wd.icon + ' 世界の驚異「' + escapeHtml(wd.name) + '」' : '🏚️ ' + escapeHtml(wd.name) + 'の遺跡'}`;
         if (city.besieged >= sim.t - 3) html += `<br><span style="color:#a51c12">攻囲中 — 守備 ${Math.max(0, city.defense / sim.maxDefense(city) * 100).toFixed(0)}%</span>`;
@@ -765,7 +816,7 @@
       if (Math.hypot(ax / R.S - c.fx, ay / R.S - c.fy) < 1.3) {
         const n = sim.nations[a.n];
         const mode = { attack: '進軍中', chase: '追撃中', siege: '攻囲中', home: '帰還中', idle: '待機' }[a.mode] || '';
-        html += `<br>🚩 ${escapeHtml(n.name)}軍 ${TW.fmtTroops(a.str)} 質×${sim.quality(a.n).toFixed(2)} ${a.fighting ? '<b style="color:#a51c12">交戦中</b>' : mode}`;
+        html += `<br>🚩 ${escapeHtml(n.name)}軍 ${TW.fmtTroops(a.str)}${a.gen ? '（' + escapeHtml(sim.genName(a.gen)) + ' ' + a.gen.wins + '勝）' : ''} 質×${sim.quality(a.n).toFixed(2)} ${a.fighting ? '<b style="color:#a51c12">交戦中</b>' : mode}`;
       }
     }
     tip.innerHTML = html;

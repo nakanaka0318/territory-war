@@ -102,6 +102,70 @@
     return { W: m.W, H: m.H, land: TW.decodeRLE(m.rle, m.W * m.H), latTop: m.latTop, latBottom: m.latBottom };
   };
 
+  // 世界自然遺産: 地形に合った場所へランダムに配置 (都市と同じように奪い合える)
+  const NATURAL = TW.NATURAL = [
+    { key: 'waterfall', name: '大瀑布', icon: '💧', desc: '都市の発展 +20%・人口増加 +25%' },
+    { key: 'peak', name: '天を衝く霊峰', icon: '🏔️', desc: '兵の質 +0.05・安定度 +' },
+    { key: 'tree', name: '千年の神木', icon: '🌲', desc: '安定度 +・反乱が起きにくい' },
+    { key: 'lake', name: '鏡の湖', icon: '🌈', desc: '文化点 +15/年' },
+    { key: 'crystal', name: '水晶の大洞窟', icon: '💎', desc: '兵力収入 +15%' },
+    { key: 'dunes', name: '黄金の砂丘', icon: '🏜️', desc: '兵力収入 +10%' },
+    { key: 'volcano', name: '火の山', icon: '🌋', desc: '兵の質 +0.06 (名工の鍛冶場)' },
+    { key: 'aurora', name: '極光の氷原', icon: '❄️', desc: '文化点 +12/年' },
+  ];
+  function placeNatural(w, rand) {
+    const { W, H, terrain, land, elev, river } = w;
+    const cells = w.landCells;
+    const out = [];
+    const far = i => {
+      const x = i % W, y = (i / W) | 0;
+      for (const c of w.citySites) if ((c.x - x) ** 2 + (c.y - y) ** 2 < 9) return false;
+      for (const o of out) if ((o.x - x) ** 2 + (o.y - y) ** 2 < 144) return false;
+      return true;
+    };
+    const around = (i, r, t) => {
+      const x = i % W, y = (i / W) | 0; let n = 0;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < W && yy < H && terrain[yy * W + xx] === t) n++;
+      }
+      return n;
+    };
+    // 内陸の湖に面した陸地
+    const seaComp = components(W, H, land, 0);
+    const lakeShore = i => {
+      const x = i % W, y = (i / W) | 0;
+      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+        if (j >= 0 && !land[j] && !seaComp.sizes[seaComp.comp[j]].edge) return true;
+      }
+      return false;
+    };
+    const lat = y => Math.abs(w.lat(y));
+    const scorers = {
+      waterfall: i => (river[i] && terrain[i] !== T.MOUNTAIN && elev[i] > 0.5 ? elev[i] + rand() * 0.2 : -1),
+      peak: i => (terrain[i] === T.MOUNTAIN ? elev[i] : -1),
+      tree: i => (terrain[i] === T.FOREST ? around(i, 3, T.FOREST) + rand() * 3 : -1),
+      lake: i => (lakeShore(i) ? 1 + rand() : -1),
+      crystal: i => (terrain[i] === T.HILLS ? around(i, 2, T.HILLS) + rand() * 4 : -1),
+      dunes: i => (terrain[i] === T.DESERT ? around(i, 3, T.DESERT) + rand() * 3 : -1),
+      volcano: i => (terrain[i] === T.MOUNTAIN ? elev[i] * 0.5 + rand() : -1),
+      aurora: i => ((terrain[i] === T.TUNDRA || terrain[i] === T.SNOW) ? lat((i / W) | 0) / 90 + rand() * 0.3 : -1),
+    };
+    const order = NATURAL.slice().sort(() => rand() - 0.5);
+    const maxN = TW.clamp(Math.round(cells.length / 1600), 4, 8);
+    for (const def of order) {
+      if (out.length >= maxN) break;
+      let best = -1, bs = 0;
+      for (const i of cells) {
+        const s = scorers[def.key](i);
+        if (s > bs && far(i)) { bs = s; best = i; }
+      }
+      if (best < 0) continue;
+      out.push({ ...def, i: best, x: best % W, y: (best / W) | 0 });
+    }
+    return out;
+  }
+
   // 陸地マスクから世界を構築
   TW.buildWorld = function (W, H, landIn, opts = {}) {
     const seed = opts.seed >>> 0;
@@ -246,6 +310,7 @@
     for (const c of chosen) c.name = TW.Names.city(rand, used);
     w.citySites = chosen;
     w.usedNames = used;
+    w.natSites = placeNatural(w, rand);
     return w;
   };
 })();

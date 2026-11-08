@@ -103,6 +103,10 @@ TW.Names = (function () {
       }
       const s = root(r) + root(r); used.add(s); return s;
     },
+    general(r) {
+      const n = root(r);
+      return n.length > 5 ? n.slice(0, 4) : n;
+    },
     city(r, used) {
       for (let k = 0; k < 60; k++) {
         let s = root(r);
