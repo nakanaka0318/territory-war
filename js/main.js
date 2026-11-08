@@ -14,7 +14,7 @@
   const editor = new TW.Editor();
   const comm = new TW.Commentary(R, document.querySelector('#ticker'));
   const app = {
-    sim: null, world: null, editing: false, paused: false, speed: 3, acc: 0,
+    sim: null, world: null, editing: false, paused: false, speed: 1, acc: 0,
     tool: 'look', settings: { type: 'random', seed: '', nations: 8, saved: '' },
   };
   window.app = app; // デバッグ用
