@@ -914,6 +914,7 @@
     }
     if (sim) $('#date').textContent = `暦 ${sim.year()}年 ${sim.month()}月`;
     if (sim && !app.editing) comm.update(sim, now, !app.paused);
+    R.alpha = sim && !app.paused && !app.editing ? Math.min(1, app.acc) : 1;
     R.draw(now, app.editing ? editor : null);
     requestAnimationFrame(loop);
   }

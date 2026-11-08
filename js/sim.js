@@ -910,9 +910,23 @@
       if (!a.path) { this.nations[a.n].manpower += a.str * 0.5; this.returnGeneral(a); a.str = 0; }
     }
 
+    // 描画用の位置 (マス座標、移動途中を含む)
+    visualPos(a) {
+      const W = this.w.W;
+      let x = a.x, y = a.y;
+      if (a.path && a.pi < a.path.length) {
+        const n = a.path[a.pi];
+        x += ((n % W) - a.x) * a.prog; y += (((n / W) | 0) - a.y) * a.prog;
+      }
+      return [x, y];
+    }
+
     moveArmies() {
       const w = this.w, W = w.W;
       for (const a of this.armies) {
+        // ティック開始時の位置を覚えておき、描画でなめらかに補間する
+        const v = this.visualPos(a);
+        a.vx0 = v[0]; a.vy0 = v[1];
         a.px = a.x; a.py = a.y;
         if (a.str <= 0) continue;
         if (a.fighting && !(a.mode === 'home' && a.retreat > this.t)) continue;

@@ -483,12 +483,15 @@
       }
     }
 
+    // ティックの間を補間してなめらかに動かす (alpha: 次のティックまでの進み具合)
     armyPos(a) {
-      const S = this.S, W = this.w.W;
-      let x = a.x, y = a.y;
-      if (a.path && a.pi < a.path.length && !a.fighting && a.mode !== 'siege') {
-        const n = a.path[a.pi];
-        x += ((n % W) - a.x) * a.prog; y += (((n / W) | 0) - a.y) * a.prog;
+      const S = this.S;
+      const v = this.sim.visualPos(a);
+      let x = v[0], y = v[1];
+      const al = this.alpha == null ? 1 : this.alpha;
+      if (a.vx0 != null && al < 1) {
+        const dx = x - a.vx0, dy = y - a.vy0;
+        if (dx * dx + dy * dy < 9) { x = a.vx0 + dx * al; y = a.vy0 + dy * al; }
       }
       return [(x + 0.5) * S, (y + 0.5) * S];
     }
