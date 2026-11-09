@@ -948,7 +948,7 @@
       const [ax, ay] = R.armyPos(a);
       if (Math.hypot(ax / R.S - c.fx, ay / R.S - c.fy) < 1.3) {
         const n = sim.nations[a.n];
-        const mode = { attack: '進軍中', chase: '追撃中', siege: '攻囲中', home: '帰還中', idle: '待機' }[a.mode] || '';
+        const mode = { attack: '進軍中', chase: '追撃中', siege: '攻囲中', home: '帰還中', idle: '待機', garrison: '守備' }[a.mode] || '';
         if (a.comp) html += `<br>${TW.UKEYS.filter(k => a.comp[k] > 0.05).map(k => (k === 'spc' && n.special ? TW.SPECIALS[n.special].name : TW.UNITS[k].name) + Math.round(a.comp[k] * 100) + '%').join(' ')}`;
         html += `<br>🚩 ${escapeHtml(n.name)}軍 ${TW.fmtTroops(a.str)}${a.gen ? '（' + escapeHtml(sim.genName(a.gen)) + ' ' + a.gen.wins + '勝）' : ''} 質×${sim.quality(a.n).toFixed(2)} ${a.fighting ? '<b style="color:#a51c12">交戦中</b>' : mode}`;
       }

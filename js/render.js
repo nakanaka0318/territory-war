@@ -502,6 +502,11 @@
         const dx = x - a.vx0, dy = y - a.vy0;
         if (dx * dx + dy * dy < 9) { x = a.vx0 + dx * al; y = a.vy0 + dy * al; }
       }
+      if (a.exitT) {
+        const k = (performance.now() - a.exitT) / 900;
+        if (k < 1) { const e = 1 - (1 - k) * (1 - k); x = a.exitX + (x - a.exitX) * e; y = a.exitY + (y - a.exitY) * e; }
+        else a.exitT = 0;
+      }
       return [(x + 0.5) * S, (y + 0.5) * S];
     }
 
@@ -923,8 +928,10 @@
           ctx.beginPath(); ctx.moveTo(x + 1 * sc, y - 11 * sc); ctx.lineTo(x + 7 * sc, y - 3 * sc); ctx.lineTo(x + 1 * sc, y - 2 * sc); ctx.closePath();
           ctx.fillStyle = n.css; ctx.fill(); ctx.stroke();
         } else {
-          // 旗持ち
+          // 旗持ち (敗走中は旗が傾く)
           const wave = a.path && !a.fighting ? Math.sin(t * 6 + a.id) * 1.2 : Math.sin(t * 3 + a.id) * 0.5;
+          const routed = a.routed > sim.t;
+          if (routed) { ctx.save(); ctx.translate(x, y + 3 * sc); ctx.rotate(dir[0] < 0 ? 0.5 : -0.5); ctx.translate(-x, -(y + 3 * sc)); }
           ctx.beginPath(); ctx.moveTo(x, y + 3 * sc); ctx.lineTo(x, y - 14 * sc); ctx.stroke();
           ctx.beginPath();
           ctx.moveTo(x, y - 14 * sc); ctx.quadraticCurveTo(x + 5 * sc, y - 15 * sc + wave * sc, x + 11 * sc, y - 13 * sc + wave * sc);
@@ -935,8 +942,19 @@
             ctx.fillStyle = 'rgb(255,236,150)'; ctx.font = `${6 * sc / px * px}px serif`;
             ctx.fillText('★', x + 5.5 * sc, y - 14 * sc + wave * sc);
           }
+          if (routed) ctx.restore();
           ctx.beginPath(); ctx.ellipse(x, y + 3 * sc, 3.5 * sc, 1.5 * sc, 0, 0, Math.PI * 2);
           ctx.fillStyle = 'rgba(40,26,16,0.35)'; ctx.fill();
+        }
+        // 状態の札: 敗走・守備・兵糧攻め
+        const tag = a.routed > sim.t ? ['敗走', 'rgb(150,40,20)'] : a.mode === 'garrison' && !a.path ? ['守備', 'rgb(40,80,120)'] :
+          a.mode === 'siege' && a.target && a.target.type === 'city' && sim.cities[a.target.id].food != null && sim.cities[a.target.id].food < 100 && sim.cities[a.target.id].defense > sim.maxDefense(sim.cities[a.target.id]) * 0.5 ? ['兵糧攻め', 'rgb(120,90,20)'] : null;
+        if (tag && zs >= 2.6) {
+          ctx.font = `700 ${8 * px}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+          const tw = ctx.measureText(tag[0]).width + 6 * px;
+          ctx.fillStyle = tag[1]; ctx.fillRect(x - tw / 2, y - 27 * sc - 10 * px, tw, 10 * px);
+          ctx.fillStyle = 'rgb(255,245,225)'; ctx.fillText(tag[0], x, y - 27 * sc);
+          ctx.textBaseline = 'top';
         }
         if (zs >= 3) {
           ctx.font = `700 ${9.5 * px}px ${FONT}`;
@@ -1062,7 +1080,15 @@
           for (let si = 0; si < 2; si++) {
             const { sd, str, comp } = sides[si];
             const f = si === 0 ? 1 : -1;                     // 敵の方向
-            const fx = cx - ux * f * sep * S, fy = cy - uy * f * sep * S; // 前線の中心
+            let fx = cx - ux * f * sep * S, fy = cy - uy * f * sep * S; // 前線の中心
+            // 布陣中は行軍してきた位置から戦列の位置へ移りながら横に広がる
+            let spread = 1;
+            if (b.phase === 'deploy' && sd.cx0 != null) {
+              const k = Math.min(1, pa / 4), e = k * k * (3 - 2 * k);
+              const sx0 = (sd.cx0 + 0.5) * S, sy0 = (sd.cy0 + 0.5) * S;
+              fx = sx0 + (fx - sx0) * e; fy = sy0 + (fy - sy0) * e;
+              spread = 0.35 + 0.65 * e;
+            }
             const face = ux * f < -0.2 ? -1 : 1;
             const lead = sim.nations[sd.lead] || sim.nations[sd.armies[0] && sd.armies[0].n];
             if (!lead) continue;
@@ -1092,7 +1118,7 @@
             const put = (k, n) => { for (let q = 0; q < n; q++) { const b2 = k === 'spc' ? spBase : k; (b2 === 'inf' ? rows.front : b2 === 'arc' || b2 === 'mag' ? rows.second : b2 === 'sie' ? rows.rear : rows.flank).push(k); } };
             for (const k of TW.UKEYS) put(k, Math.max(0, cnt[k]));
             const u = TW.clamp(zs / 10, 0.8, 1.35) * px;
-            const sp2 = 0.36;
+            const sp2 = 0.36 * spread;
             const lines = [[rows.front, 0], [rows.second, 0.55], [rows.rear, 1.05]];
             let halfW = 0;
             let kk = 0;
@@ -1112,7 +1138,7 @@
             // 騎兵は両翼から回り込む
             rows.flank.forEach((k, q) => {
               const sideSign = q % 2 ? 1 : -1;
-              const along = sideSign * (halfW + 0.45 + Math.floor(q / 2) * 0.32);
+              const along = sideSign * (halfW + (0.45 + Math.floor(q / 2) * 0.32) * spread);
               let d = 0.2;
               if (b.phase === 'melee') d -= Math.min(1, pa / 1.5) * 0.9 - Math.sin(t * 7 + q) * 0.1;
               const sx = fx - ux * f * d * S + vx * along * S;
@@ -1121,9 +1147,13 @@
             });
             // 軍旗と将軍
             sd.armies.forEach((a, q) => {
-              const along = (q - (sd.armies.length - 1) / 2) * 0.7;
+              const along = (q - (sd.armies.length - 1) / 2) * 0.7 * spread;
               const d = 1.6;
-              const x = fx - ux * f * d * S + vx * along * S, y = fy - uy * f * d * S + vy * along * S;
+              let x = fx - ux * f * d * S + vx * along * S, y = fy - uy * f * d * S + vy * along * S;
+              if (a.joinT != null && a.joinX != null) {
+                const k = Math.min(1, (sim.t - a.joinT + al) / 3);
+                if (k < 1) { const e = k * k * (3 - 2 * k); const jx = (a.joinX + 0.5) * S, jy = (a.joinY + 0.5) * S; x = jx + (x - jx) * e; y = jy + (y - jy) * e; }
+              }
               const n = sim.nations[a.n];
               const sc = 1.1 * px, wave = Math.sin(t * 4 + a.id) * 1.2;
               ctx.lineWidth = 1.3 * px; ctx.strokeStyle = 'rgb(40,26,16)';

@@ -471,7 +471,7 @@
         const rl = TW.roadLevel(this.road[j]);
         c = TW.TERRAIN[w.terrain[j]].move * ROAD_MULT[rl];
         const o = this.owner[j];
-        if (o >= 0 && o !== n && this.rel[n * MAXN + o] !== 1 && this.rel[n * MAXN + o] !== 2) c += 40;
+        if (o >= 0 && o !== n && this.rel[n * MAXN + o] !== 1 && this.rel[n * MAXN + o] !== 2) c += 8; // 中立国の領土はなるべく避ける
         if (w.river[j] && !w.river[i]) c += rl >= 2 ? 0.3 : 1.2; // 街道には橋が架かる
         if (!w.land[i]) c += 3; // 上陸
         if (this.frost && this.frost[j] && n !== this.frostN) c += 2.5;
@@ -535,9 +535,10 @@
           const path = [];
           let c = goal;
           while (c !== start && c >= 0) { path.push(c); c = came[c]; }
+          this.pathExp = (this.pathExp || 0) + exp;
           return path.reverse();
         }
-        if (++exp > maxExp) return null;
+        if (++exp > maxExp) { this.pathExp = (this.pathExp || 0) + exp; return null; }
         const x = i % W, y = (i / W) | 0;
         for (let dy = -1; dy <= 1; dy++) {
           const ny = y + dy; if (ny < 0 || ny >= H) continue;
@@ -560,6 +561,7 @@
           }
         }
       }
+      this.pathExp = (this.pathExp || 0) + exp;
       return null;
     }
 
@@ -777,13 +779,14 @@
       return m;
     }
 
-    pickTarget(n, fx, fy, fromI, tcount, myStr = 30) {
+    pickTarget(n, fx, fy, fromI, tcount, myStr = 30, bad = null) {
       const w = this.w;
+      const isBad = k => bad && bad.get(k) > this.t;
       const lm = w.land[fromI] ? w.landmass[fromI] : -1;
       const opt = this.opTargets(n.id);
       let best = null, bs = 0;
       for (const c of this.cities) {
-        if (c.owner < 0 || this.rel[n.id * MAXN + c.owner] !== 1) continue;
+        if (c.owner < 0 || this.rel[n.id * MAXN + c.owner] !== 1 || isBad('city' + c.id)) continue;
         const d = Math.hypot(c.x - fx, c.y - fy);
         const same = lm >= 0 && w.landmass[c.i] === lm;
         let s = (1 + c.pop * 0.25 + (c.capital ? 1.5 : 0) + (c.nat ? 0.8 : 0)) / (d + 6) * (same ? 1 : 0.3);
@@ -796,7 +799,7 @@
       }
       // 近くの敵軍を探して会戦を挑む
       for (const e of this.armies) {
-        if (this.rel[n.id * MAXN + e.n] !== 1 || e.str <= 0) continue;
+        if (this.rel[n.id * MAXN + e.n] !== 1 || e.str <= 0 || isBad('army' + e.id)) continue;
         const d = Math.hypot(e.x - fx, e.y - fy);
         const isT = this.threat && e.n === this.threat.nId;
         if (d > (isT ? 45 : 28)) continue;
@@ -822,7 +825,7 @@
       }
       // 敵の砦
       for (const f of this.forts) {
-        if (this.rel[n.id * MAXN + f.owner] !== 1) continue;
+        if (this.rel[n.id * MAXN + f.owner] !== 1 || isBad('fort' + f.id)) continue;
         const d = Math.hypot(f.x - fx, f.y - fy);
         if (d > 18) continue;
         let s = 1.5 / (d + 5);
@@ -851,78 +854,115 @@
     }
 
     armyAI() {
-      let budget = 6;
       const tcount = this.targetCountMap();
       const byNation = new Map();
       for (const a of this.armies) {
         if (!byNation.has(a.n)) byNation.set(a.n, []);
         byNation.get(a.n).push(a);
       }
-      for (const n of this.nations) {
-        if (!n || !n.alive) continue;
+      const nats = this.nations.filter(n => n && n.alive);
+      const off = nats.length ? (this.t >> 2) % nats.length : 0;   // 毎回違う国から処理する
+      let spawnBudget = 4;
+      const queue = [];
+      for (let q = 0; q < nats.length; q++) {
+        const n = nats[(q + off) % nats.length];
         const list = byNation.get(n.id) || [];
         if (n.isThreat) { this.threatAI(n, list, tcount); continue; }
         const max = Math.min(16, 2 + Math.ceil(n.cityCount * 0.6));
         this.mergeSplit(n, list, max, tcount);
         // 新規編成
-        if (n.wars > 0 && budget > 0) {
-          if (list.filter(a => a.str > 0).length < max && n.manpower >= 16) {
-            const cap = this.cities[n.capital];
-            const tgt = this.pickTarget(n, cap.x, cap.y, cap.i, tcount, n.manpower * 0.45);
-            if (tgt) {
-              const tc = this.targetCell(tgt), tx = tc % this.w.W, ty = (tc / this.w.W) | 0;
-              let sc = null, sd = 1e9;
-              for (const c of this.cities) {
-                if (c.owner !== n.id) continue;
-                const d = Math.hypot(c.x - tx, c.y - ty) * (this.w.landmass[c.i] === this.w.landmass[tc] ? 1 : (this.w.landDist[c.i] === 1 ? 1.4 : 3));
-                if (d < sd) { sd = d; sc = c; }
-              }
-              if (sc) {
-                const str = Math.max(12, n.manpower * 0.45);
-                n.manpower -= str;
-                const a = this.spawnArmy(n, sc, str);
-                a.target = tgt; a.mode = tgt.type === 'army' ? 'chase' : 'attack';
-                tcount.set(tgt.type + tgt.id, (tcount.get(tgt.type + tgt.id) || 0) + 1);
-                const over = this.w.landmass[sc.i] !== this.w.landmass[tc] || !this.w.land[tc];
-                a.path = this.findPath(a.i, tc, n.id, over ? 24000 : 9000); a.pi = 0; a.lastPath = this.t;
-                if (over) budget--;
-                budget--;
-                if (!a.path) { a.target = null; a.mode = 'idle'; }
-              }
+        if (n.wars > 0 && spawnBudget > 0 && list.filter(a => a.str > 0).length < max && n.manpower >= 16) {
+          const cap = this.cities[n.capital];
+          const tgt = this.pickTarget(n, cap.x, cap.y, cap.i, tcount, n.manpower * 0.45);
+          if (tgt) {
+            const tc = this.targetCell(tgt), tx = tc % this.w.W, ty = (tc / this.w.W) | 0;
+            let sc = null, sd = 1e9;
+            for (const c of this.cities) {
+              if (c.owner !== n.id) continue;
+              const d = Math.hypot(c.x - tx, c.y - ty) * (this.w.landmass[c.i] === this.w.landmass[tc] ? 1 : (this.w.landDist[c.i] === 1 ? 1.4 : 3));
+              if (d < sd) { sd = d; sc = c; }
+            }
+            if (sc) {
+              const str = Math.max(12, n.manpower * 0.45);
+              n.manpower -= str;
+              const a = this.spawnArmy(n, sc, str);
+              a.target = tgt; a.mode = tgt.type === 'army' ? 'chase' : 'attack';
+              a.lastPath = -1e9;  // すぐに経路を探す
+              tcount.set(tgt.type + tgt.id, (tcount.get(tgt.type + tgt.id) || 0) + 1);
+              queue.push(a);
+              spawnBudget--;
             }
           }
         }
         for (const a of list) {
-          if (a.str <= 0) continue;
+          if (a.str <= 0 || a.battle) continue;
           if (a.mode === 'siege' && this.targetValid(a)) continue;
-          const retreating = a.mode === 'home' && a.retreat && a.retreat > this.t;
-          if (retreating) continue;
+          if (a.mode === 'home' && a.retreat > this.t && a.path) continue;
+          if (n.wars === 0 && a.mode !== 'home' && this.w.land[a.i] && this.owner[a.i] === n.id) {
+            // 平和になった軍は自国領ならその場で解散
+            n.manpower += a.str * 0.9; this.returnGeneral(a); a.str = 0;
+            continue;
+          }
           let need = false;
           if (n.wars === 0) {
-            if (a.mode !== 'home' || !this.targetValid(a)) need = true;
-          } else if (!this.targetValid(a) || a.mode === 'home' || a.mode === 'idle') need = true;
+            if (a.mode !== 'home' || !this.targetValid(a) || !a.path) need = true;
+          } else if (a.mode === 'garrison' && this.targetValid(a)) need = this.t - a.lastPath > TPY / 2 || (a.path && a.pi < a.path.length ? false : this.t - a.lastPath > TPY / 2);
+          else if (!this.targetValid(a) || a.mode === 'home' || a.mode === 'idle') need = true;
           else if (a.mode === 'chase' && this.t - a.lastPath > 16) need = true;
-          else if (!a.path) need = true;
-          if (!need || budget <= 0) continue;
-          budget--;
-          if (n.wars > 0) {
-            const tgt = this.pickTarget(n, a.x, a.y, a.i, tcount, a.str);
-            if (tgt) {
-              a.target = tgt; a.mode = tgt.type === 'army' ? 'chase' : 'attack';
-              tcount.set(tgt.type + tgt.id, (tcount.get(tgt.type + tgt.id) || 0) + 1);
-              const tcell = this.targetCell(tgt);
-              const near = Math.hypot((tcell % this.w.W) - a.x, ((tcell / this.w.W) | 0) - a.y) < 10;
-              const over = !near && this.w.land[a.i] && this.w.land[tcell] && this.w.landmass[a.i] !== this.w.landmass[tcell];
-              a.path = this.findPath(a.i, tcell, n.id, near ? 1500 : over ? 24000 : 9000); a.pi = 0; a.prog = 0; a.lastPath = this.t;
-              if (over) budget--;
-              if (near) budget += 0.6; // 近距離の探索は安い
-              if (a.path && tgt.type === 'fort' && a.path.length > 1) a.path.pop();
-              if (a.path) continue;
-            }
-          }
-          this.sendHome(a);
+          else if (!a.path || a.pi >= a.path.length) need = true;
+          if (need && !queue.includes(a)) queue.push(a);
         }
       }
+      // 長く待っている軍から順に経路を探す (探索量で予算を管理)
+      queue.sort((x, y) => (x.lastPath == null ? -1e9 : x.lastPath) - (y.lastPath == null ? -1e9 : y.lastPath));
+      let budget = 70000;
+      for (const a of queue) {
+        if (budget <= 0) break;
+        this.pathExp = 0;
+        this.retarget(a, this.nations[a.n], tcount);
+        budget -= this.pathExp + 150;
+      }
+    }
+
+    // 1つの軍の目標と経路を決め直す
+    retarget(a, n, tcount) {
+      a.lastPath = this.t;
+      if (n.wars > 0) {
+        let tgt = a.target && this.targetValid(a) && a.mode !== 'home' && a.mode !== 'idle' && a.mode !== 'chase' ? a.target : null;
+        // 届かない目標は覚えておき、しばらく別の目標を狙う
+        for (let tries = 0; tries < 3; tries++) {
+          if (!tgt) tgt = this.pickTarget(n, a.x, a.y, a.i, tcount, a.str, a.bad);
+          if (!tgt) break;
+          a.target = tgt; a.mode = tgt.type === 'army' ? 'chase' : 'attack';
+          const tcell = this.targetCell(tgt);
+          const near = Math.hypot((tcell % this.w.W) - a.x, ((tcell / this.w.W) | 0) - a.y) < 10;
+          const over = !near && (!this.w.land[a.i] || !this.w.land[tcell] || this.w.landmass[a.i] !== this.w.landmass[tcell]);
+          a.path = this.findPath(a.i, tcell, n.id, near ? 2000 : over ? 24000 : 9000); a.pi = 0; a.prog = 0;
+          if (a.path && tgt.type === 'fort' && a.path.length > 1) a.path.pop();
+          if (a.path) { tcount.set(tgt.type + tgt.id, (tcount.get(tgt.type + tgt.id) || 0) + 1); return; }
+          a.bad = a.bad || new Map();
+          a.bad.set(tgt.type + tgt.id, this.t + TPY * 2);
+          tgt = null; a.target = null; a.mode = 'idle';
+        }
+        // 届く敵がいなければ、敵に近い自国の都市で守りを固める
+        if (a.mode === 'idle') {
+          const W = this.w.W;
+          let best = null, bs = 1e9;
+          for (const c of this.cities) {
+            if (c.owner !== n.id) continue;
+            let md = 1e9;
+            for (const e of this.cities) if (e.owner >= 0 && this.atWar(n.id, e.owner)) md = Math.min(md, Math.hypot(c.x - e.x, c.y - e.y));
+            if (md < bs) { bs = md; best = c; }
+          }
+          if (best && best.i !== a.i && Math.hypot(best.x - a.x, best.y - a.y) > 2) {
+            a.target = { type: 'home', id: best.id }; a.mode = 'garrison';
+            a.path = this.findPath(a.i, best.i, n.id, 6000); a.pi = 0; a.prog = 0;
+            if (a.path) return;
+          }
+          if (best && Math.hypot(best.x - a.x, best.y - a.y) <= 2) { a.mode = 'garrison'; a.target = { type: 'home', id: best.id }; a.path = null; return; }
+        }
+      }
+      this.sendHome(a);
     }
 
     sendHome(a) {
@@ -966,7 +1006,7 @@
         }
         const next = a.path[a.pi];
         const cost = this.cellCost(a.i, next, a.n);
-        a.prog += 0.5 / cost;
+        a.prog += 0.5 / Math.min(cost, 4);
         if (a.prog >= 1) {
           a.prog = 0;
           a.i = next; a.x = next % W; a.y = (next / W) | 0; a.pi++;
@@ -1027,7 +1067,8 @@
         const c = this.cities[t.id];
         if (c.owner === a.n && a.i === c.i) {
           const n = this.nations[a.n];
-          if (n.wars === 0 || a.retreat) { n.manpower += a.str * 0.9; this.returnGeneral(a); a.str = 0; }
+          if (a.mode === 'garrison' && n.wars > 0) { a.path = null; }
+          else if (n.wars === 0 || a.retreat) { n.manpower += a.str * 0.9; this.returnGeneral(a); a.str = 0; }
           else { a.mode = 'idle'; a.target = null; a.retreat = 0; }
         }
         return;

@@ -35,6 +35,9 @@
     cult: { inf: 0.65, arc: 0.1, mag: 0.25 },
   };
 
+  // 特色兵の元になる兵種 (特色兵を持たない国の特色兵枠は歩兵として扱う)
+  const spBase = n => (n && n.special && SPECIALS[n.special] ? SPECIALS[n.special].base : 'inf');
+  TW.spBase = spBase;
   function norm(c) {
     let s = 0;
     for (const k of UKEYS) { c[k] = Math.max(0, c[k] || 0); s += c[k]; }
@@ -106,6 +109,8 @@
     const w1 = ok1 && (a.n === l1.id ? false : this.atWar(a.n, l1.id));
     if (ok0 && (a.n === l0.id || (!w0 && w1 && this.allied(a.n, l0.id)) || (w1 && !w0))) return 0;
     if (ok1 && (a.n === l1.id || (!w1 && w0 && this.allied(a.n, l1.id)) || (w0 && !w1))) return 1;
+    // 両方と戦争中なら、強い方を相手に弱い方へ加わる
+    if (w0 && w1) return this.sideStr(b.sides[0]) >= this.sideStr(b.sides[1]) ? 1 : 0;
     return -1;
   };
 
@@ -122,6 +127,9 @@
   P.joinBattle = function (a, b, si, late) {
     const s = b.sides[si];
     a.battle = b.id; a.battleSide = si;
+    const vp = this.visualPos(a);
+    a.joinX = vp[0]; a.joinY = vp[1]; a.joinT = this.t;
+    if (s.cx0 == null) { s.cx0 = vp[0]; s.cy0 = vp[1]; }
     a.bStr = a.str;
     if (!a.comp) a.comp = this.makeComp(this.nations[a.n]);
     s.armies.push(a);
@@ -204,8 +212,8 @@
       for (const k of UKEYS) {
         const f = a.comp[k];
         if (!f) continue;
-        const spc = k === 'spc' ? SPECIALS[n.special] : null;
-        const bt = spc ? spc.base : k;
+        const spc = k === 'spc' && n.special ? SPECIALS[n.special] : null;
+        const bt = k === 'spc' ? spBase(n) : k;
         const U = UNITS[bt];
         let p = (mode === 'missile' ? U.missile : U.melee) * (spc ? 1.35 : 1);
         if (mode === 'melee' && (bt === 'arc' || bt === 'mag' || bt === 'sie')) p += (UNITS[bt].missile || 0) * 0.25; // 白兵戦中も射撃は続く
@@ -253,6 +261,7 @@
   };
 
   P.applyBattleDamage = function (b, si, dmg) {
+    if (!isFinite(dmg) || dmg < 0) dmg = 0;
     const s = b.sides[si];
     const tot = this.sideStr(s) || 1;
     for (const a of s.armies) a.str -= dmg * a.str / tot;
@@ -300,13 +309,19 @@
       if (br0 && br1) w = s0.morale + this.sideStr(s0) / Math.max(1, s0.str0) * 50 >= s1.morale + this.sideStr(s1) / Math.max(1, s1.str0) * 50 ? 0 : 1;
       else w = br0 ? 1 : 0;
       this.endBattle(b, w);
-    } else if (this.t - b.start > 90) this.endBattle(b, -1);
+    } else if (this.t - b.start > 60) this.endBattle(b, -1);
   };
 
   P.endBattle = function (b, wi) {
     this.battles = this.battles.filter(x => x !== b);
     const all = b.sides[0].armies.concat(b.sides[1].armies);
-    for (const a of all) { a.battle = null; a.fighting = null; if (a.mode !== 'home' && a.mode !== 'siege') a.path = null; }
+    for (const a of all) {
+      a.battle = null; a.fighting = null;
+      // 戦場の隊列から元の位置へなめらかに戻す (描画用)
+      const f = a.battleSide === 0 ? -1 : 1;
+      a.exitX = b.x + Math.cos(b.angle) * f * 1.3; a.exitY = b.y + Math.sin(b.angle) * f * 1.3; a.exitT = performance.now();
+      if (a.mode !== 'home' && a.mode !== 'siege') { a.path = null; a.lastPath = -1e9; } // 次のAIで最優先に経路を探す
+    }
     const total0 = b.sides[0].str0 + b.sides[1].str0;
     if (wi < 0) {
       this.addBattleLog(b, '決着つかず、両軍は兵を引いた');
@@ -316,7 +331,7 @@
     }
     const ws = b.sides[wi], ls = b.sides[1 - wi];
     const wc = this.sideComp(ws);
-    const cavShare = wc.cav + wc.drg + (wc.spc && ws.armies.some(a => SPECIALS[this.nations[a.n].special].base === 'cav') ? wc.spc : 0);
+    const cavShare = wc.cav + wc.drg + (wc.spc && ws.armies.some(a => spBase(this.nations[a.n]) === 'cav') ? wc.spc : 0);
     let strongestWin = null;
     for (const a of ws.armies) if (!strongestWin || a.str > strongestWin.str) strongestWin = a;
     const killedGens = [];
