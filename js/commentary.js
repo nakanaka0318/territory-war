@@ -91,7 +91,7 @@ TW.Commentary = (function () {
           else this.push(`${a}と${b}の同盟が解消。関係が冷え込んでいます。`, 1, pos);
           break;
         case 'battle':
-          if (e.major) this.push(`大会戦！${e.text.replace(/:.*/, '')}で${a}軍が${b}軍を打ち破りました！`, 3, pos);
+          if (e.major) this.push(`決着！${e.text.replace(/:.*/, '')}は${a}の勝利！決め手は「${(e.text.split(' — ')[1] || '激戦の末')}」！`, 3, pos);
           break;
         case 'culture':
           if (e.major) this.push(`${a}が文化の新時代へ！兵の質も上がり、ますます手強くなります。`, 2, pos);
@@ -118,7 +118,17 @@ TW.Commentary = (function () {
           else this.push(`${e.text}。二方面から攻め立てる構えです！`, 2, pos);
           break;
         case 'siege':
-          if (Math.random() < 0.5) this.push(`${e.text}！城内で激しい戦いです！`, 3, pos);
+          if (/降伏/.test(e.text)) this.push(`${e.text}！長い包囲の末、ついに兵糧が尽きました！`, 3, pos);
+          else if (Math.random() < 0.5) this.push(`${e.text}！城内で激しい戦いです！`, 3, pos);
+          break;
+        case 'battlestart':
+          this.push(`さあ大会戦です！${e.text.replace(/が始まった — /, '、')}！両軍が布陣を終え、まもなく矢の応酬が始まります！`, 3, pos);
+          break;
+        case 'ambush':
+          this.push(`伏兵だ！${e.text.replace(/^.*?: /, '')}　待ち構えていた軍が一斉に襲いかかります！`, 3, pos);
+          break;
+        case 'reinforce':
+          this.push(`${e.text}！援軍の到着で戦況が変わるか！`, 2, pos);
           break;
         case 'fort':
           if (/陥落/.test(e.text)) this.push(`${e.text}！これで道が開けました！`, 3, pos);
@@ -128,7 +138,7 @@ TW.Commentary = (function () {
           this.push(`${e.text}！大自然の恵みが国を潤します。`, 2, pos);
           break;
         case 'threat':
-          if (/出現/.test(e.text)) this.push(`緊急事態です！${e.text.replace(/^.*?— /, '').replace(/!.*$/, '')}！各国は争いをやめ、世界連合として立ち向かいます！`, 6, pos);
+          if (/出現/.test(e.text)) this.push(`緊急事態です！${e.text.replace(/^.*?— /, '').replace(/!.*$/, '')}！各国は互いに争いながらも、この脅威に立ち向かいます！`, 6, pos);
           else if (/討たる/.test(e.text)) this.push(`やりました！${e.text.replace(/^\S+ /, '')}！世界に平和が戻ります！`, 6, pos);
           else if (e.major) this.push(`${e.text}！なんという惨状でしょう！`, 4, pos);
           else if (Math.random() < 0.4) this.push(`${e.text}…被害が広がっています！`, 3, pos);

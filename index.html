@@ -81,6 +81,12 @@
           <button data-ttype="demon">👿 魔王軍</button>
           <button data-ttype="dragon">🐉 古竜</button>
           <button data-ttype="undead">💀 不死の軍勢</button>
+          <button data-ttype="frost">❄️ 氷の女王</button>
+          <button data-ttype="deep">🐙 深海の侵略者</button>
+          <button data-ttype="cult">🕯️ 邪神の教団</button>
+          <button data-ttype="frost">❄️ 氷の女王</button>
+          <button data-ttype="deep">🐙 深海の侵略者</button>
+          <button data-ttype="cult">🕯️ 邪神の教団</button>
         </div>
       </div>
     </div>
@@ -220,7 +226,9 @@
         <li>🎙 <b>実況</b>: 状況をわかりやすく解説するテロップ。🎥 <b>自動カメラ</b>: 実況に合わせて注目の場所へ移動（地図を触るとしばらく止まります）</li>
         <li><b>軍団</b>: 旗持ちと兵士の群れで表示。名前付きの<b>将軍</b>が率い、勝つほど「歴戦」「百戦錬磨」「不敗」「城落とし」などの称号を得ます。近くの敵軍を探して会戦し、近くの味方と合流して大軍になったり、大軍が別働隊に分かれたりします</li>
         <li><b>作戦</b>: 宣戦すると作戦名と大きな矢印が地図に描かれ、軍団はその目標を目指します。<b>砦</b>は国境の要衝に築かれ、落とさないと先へ進めません。大会戦の跡は<b>古戦場</b>として残ります</li>
-        <li>⚠️ <b>世界の脅威</b>: およそ100年に1度、魔王軍・古竜・不死の軍勢のいずれかが現れます。諸国は争いをやめて世界連合を結成し、兵の質と収入が上がった状態で立ち向かいます。拠点を落とすか古竜を倒せば討伐、英雄の国と将軍の名が残ります</li>
+        <li>⚠️ <b>世界の脅威</b>: およそ100年に1度、魔王軍・古竜・不死の軍勢・氷の女王・深海の侵略者・邪神の教団のいずれかが現れます。諸国は互いの戦争を続けながらも兵の質と収入が上がった状態で立ち向かいます。拠点を落とすか古竜を倒せば討伐、英雄の国と将軍の名が残ります</li>
+        <li>⚔️ <b>会戦</b>: 敵軍と出会うと 布陣→射撃戦→白兵戦→追撃 と進み、士気が尽きた側が潰走します。近くの軍は援軍として加わり、森や丘で待ち構えた軍は奇襲をかけます。歩兵・騎兵・弓兵・攻城兵器には相性があり（騎兵は弓に強く槍に弱い、弓は歩兵に強い）、国ごとの特色兵や、文化を極めた国の魔導兵・竜騎士も登場します。会戦の上の戦況ゲージや、古戦場・年代記をクリックすると戦記が読めます</li>
+        <li>🏰 包囲された都市は兵糧が尽きると降伏します。兵力が足りない軍は強攻せず兵糧攻めに。海の上で艦隊がぶつかると海戦になり、敗れた艦隊は沈みます</li>
         <li>⚔ <b>対覇権の大同盟</b>: 一国が大陸の3割を超えて突出すると、周辺国が大同盟を結んで一斉に宣戦します</li>
         <li>⛵ 時代が進むと、海を越えた国とも戦争をするようになります</li>
         <li>🌿 <b>世界自然遺産</b>: 大瀑布・霊峰・神木などが地図にランダムに現れ、都市と同じように奪い合えます。持つ国にボーナス</li>
@@ -240,6 +248,20 @@
     </div>
   </div>
 
+  <div id="modal-battle" class="modal" hidden>
+    <div class="dialog paper battle-rep">
+      <button class="book-close" id="battle-close" title="閉じる">✕</button>
+      <div id="battle-body"></div>
+    </div>
+  </div>
+
+  <div id="modal-battle" class="modal" hidden>
+    <div class="dialog paper battle-rep">
+      <button class="book-close" id="battle-close" title="閉じる">✕</button>
+      <div id="battle-body"></div>
+    </div>
+  </div>
+
   <div id="loading" hidden><div class="paper">世界を創造しています…</div></div>
 </div>
 
@@ -248,6 +270,7 @@
 <script src="js/world.js"></script>
 <script src="js/poems.js"></script>
 <script src="js/sim.js"></script>
+<script src="js/battle.js"></script>
 <script src="js/render.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/editor.js"></script>

@@ -462,6 +462,7 @@
       }
       ctx.drawImage(this.terr, 0, 0);
       if (sim.roadDirty && now - this.lastRoad > 1000) { this.buildRoads(); this.lastRoad = now; }
+      if (sim.frost || this.frostCv) this.drawFrost(now);
       ctx.drawImage(this.roadCv, 0, 0);
       this.drawBattlefields();
       this.drawOps(now);
@@ -469,6 +470,7 @@
       this.drawForts();
       this.drawCities();
       this.drawLabels();
+      this.drawBattles(now);
       this.drawArmies();
       this.drawEffects(now);
       this.drawCursor();
@@ -486,6 +488,13 @@
     // ティックの間を補間してなめらかに動かす (alpha: 次のティックまでの進み具合)
     armyPos(a) {
       const S = this.S;
+      if (a.battle && this.sim.battleById) {
+        const b = this.sim.battleById(a.battle);
+        if (b) {
+          const f = a.battleSide === 0 ? -1 : 1;
+          return [(b.x + 0.5 + Math.cos(b.angle) * f * 1.3) * S, (b.y + 0.5 + Math.sin(b.angle) * f * 1.3) * S];
+        }
+      }
       const v = this.sim.visualPos(a);
       let x = v[0], y = v[1];
       const al = this.alpha == null ? 1 : this.alpha;
@@ -573,6 +582,14 @@
             ctx.setLineDash([4 * px, 3 * px]); ctx.beginPath(); ctx.arc(x, y, 16 * px, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
           }
           ctx.save(); ctx.textAlign = 'center'; ctx.font = `${22 * px}px serif`; ctx.fillStyle = '#000';
+          if (c.lair === 'deep') {
+            ctx.strokeStyle = 'rgba(20,90,100,0.75)'; ctx.lineWidth = 1.6 * px;
+            for (let q = 0; q < 3; q++) {
+              ctx.beginPath();
+              ctx.arc(x, y, (10 + q * 6) * px, tt * (1.5 - q * 0.3) + q, tt * (1.5 - q * 0.3) + q + Math.PI * 1.3);
+              ctx.stroke();
+            }
+          }
           ctx.fillText(def ? def.icon : '☠', x, y + 1 * px);
           ctx.font = `900 ${11 * px}px ${FONT}`;
           ctx.lineWidth = 3 * px; ctx.strokeStyle = 'rgba(30,0,20,0.85)'; ctx.strokeText(c.name, x, y + 20 * px);
@@ -760,8 +777,9 @@
       this.dirs = this.dirs || new Map();
       ctx.save();
       const byId = new Map(sim.armies.map(a => [a.id, a]));
-      // --- 会戦の演出 ---
+      // --- 会戦の演出 (旧来の小競り合い用。会戦中の軍は drawBattles で描く) ---
       for (const a of sim.armies) {
+        if (a.battle) continue;
         if (!a.fighting) continue;
         const b = byId.get(a.fighting);
         if (!b || (b.id < a.id && b.fighting === a.id)) continue;
@@ -810,7 +828,7 @@
       const showSoldiers = zs >= 2.4;
       for (const a of sim.armies) {
         const n = sim.nations[a.n];
-        if (!n) continue;
+        if (!n || (a.battle && sim.battleById(a.battle))) continue;
         const [x, y] = this.armyPos(a);
         const sea = !w.land[a.i];
         const sc = TW.clamp(0.85 + Math.sqrt(a.str) * 0.045, 0.85, 1.5) * px;
@@ -879,9 +897,8 @@
           const fighting = !!a.fighting || a.mode === 'siege';
           const sp = 4.3 * px * TW.clamp(zs / 10, 0.75, 1.25);
           const u = sp / 4.3;
-          const spear = new Path2D();
-          ctx.fillStyle = n.css;
-          const heads = [];
+          const types = this.unitTypes(a, count);
+          const face = dir[0] < -0.2 ? -1 : 1;
           for (let k = 0; k < count; k++) {
             const row = Math.floor(k / 5), col = (k % 5) - 2;
             const h = Math.imul(a.id * 31 + k, 2654435761) >>> 0;
@@ -894,16 +911,8 @@
             let sy = y + (dir[1] * f + perp[1] * side) * sp;
             if (moving) sy += Math.sin(t * 10 + k * 1.3) * 0.7 * px;
             if (fighting) { sx += Math.sin(t * 17 + k) * 0.6 * px; }
-            ctx.fillRect(sx - 1.4 * u, sy - 3.2 * u, 2.8 * u, 4.6 * u);
-            heads.push(sx, sy);
-            spear.moveTo(sx + 1.8 * u, sy + 1.2 * u);
-            spear.lineTo(sx + 1.8 * u + dir[0] * 2.4 * u, sy - 6.5 * u + dir[1] * 2.4 * u);
+            this.drawFigure(types[k], sx, sy, u, n, face, t, k, moving);
           }
-          ctx.fillStyle = 'rgb(232,204,166)';
-          for (let k = 0; k < heads.length; k += 2) ctx.fillRect(heads[k] - 1.1 * u, heads[k + 1] - 5.4 * u, 2.2 * u, 2.2 * u);
-          // 輪郭で見やすく
-          ctx.strokeStyle = 'rgba(40,26,16,0.5)'; ctx.lineWidth = 0.5 * u;
-          ctx.strokeStyle = 'rgba(40,26,16,0.85)'; ctx.lineWidth = 0.8 * u; ctx.stroke(spear);
         }
         ctx.lineWidth = 1.3 * px; ctx.strokeStyle = 'rgb(40,26,16)';
         if (sea) {
@@ -948,6 +957,269 @@
         }
       }
       ctx.restore();
+    }
+
+    // 兵種ごとの並び (兵数に応じた人数を割り当てる)
+    unitTypes(a, count) {
+      const comp = a.comp || { inf: 1 };
+      if (a._types && a._typesN === count && a._typesC === comp) return a._types;
+      const order = ['cav', 'inf', 'spc', 'arc', 'mag', 'drg', 'sie'];
+      const out = [];
+      let acc = 0, idx = 0;
+      for (const k of order) {
+        acc += comp[k] || 0;
+        while (idx < count && (idx + 0.5) / count <= acc + 1e-9) { out.push(k); idx++; }
+      }
+      while (out.length < count) out.push('inf');
+      a._types = out; a._typesN = count; a._typesC = comp;
+      return out;
+    }
+
+    // 兵士1人の絵 (兵種がわかる形)
+    drawFigure(type, x, y, u, n, face, t, k, moving) {
+      const ctx = this.ctx;
+      let base = type, sp = null;
+      if (type === 'spc' && n.special && TW.SPECIALS) { sp = n.special; base = TW.SPECIALS[sp].base; }
+      const skin = 'rgb(232,204,166)', ink = 'rgba(40,26,16,0.85)';
+      const step = moving ? Math.sin(t * 12 + k) * 0.6 * u : 0;
+      if (base === 'cav') {
+        const horse = sp === 'camel' ? 'rgb(196,160,104)' : sp === 'wolf' ? 'rgb(150,150,150)' : sp === 'knight' ? 'rgb(70,60,60)' : 'rgb(118,82,52)';
+        ctx.fillStyle = horse;
+        ctx.fillRect(x - 2.4 * u, y - 1.3 * u, 4.8 * u, 1.9 * u);
+        ctx.fillRect(x + face * 1.9 * u - 0.6 * u, y - 2.7 * u, 1.3 * u, 1.9 * u);
+        if (sp === 'camel') ctx.fillRect(x - 0.6 * u, y - 2.4 * u, 1.4 * u, 1.2 * u);
+        ctx.fillRect(x - 2.1 * u + step, y + 0.5 * u, 0.6 * u, 1.5 * u);
+        ctx.fillRect(x + 1.5 * u - step, y + 0.5 * u, 0.6 * u, 1.5 * u);
+        ctx.fillStyle = n.css; ctx.fillRect(x - 0.7 * u, y - 3.9 * u, 1.5 * u, 2.6 * u);
+        ctx.fillStyle = sp === 'knight' ? 'rgb(200,170,60)' : skin; ctx.fillRect(x - 0.65 * u, y - 5.1 * u, 1.3 * u, 1.3 * u);
+        ctx.strokeStyle = ink; ctx.lineWidth = 0.7 * u;
+        ctx.beginPath(); ctx.moveTo(x, y - 3.2 * u); ctx.lineTo(x + face * 4.2 * u, y - 5.2 * u); ctx.stroke();
+      } else if (base === 'arc') {
+        ctx.fillStyle = n.css; ctx.fillRect(x - 1.3 * u, y - 3 * u, 2.6 * u, 4.4 * u);
+        ctx.fillStyle = skin; ctx.fillRect(x - 1 * u, y - 5.1 * u, 2 * u, 2 * u);
+        ctx.strokeStyle = 'rgb(110,70,30)'; ctx.lineWidth = 0.8 * u;
+        const r = sp === 'longbow' ? 3.2 : 2.2;
+        ctx.beginPath(); ctx.arc(x + face * 1.2 * u, y - 1.6 * u, r * u, -Math.PI / 2, Math.PI / 2, face < 0); ctx.stroke();
+      } else if (base === 'sie') {
+        ctx.fillStyle = 'rgb(120,84,50)'; ctx.fillRect(x - 2.6 * u, y - 1 * u, 5.2 * u, 1.6 * u);
+        ctx.fillStyle = 'rgb(50,36,24)';
+        ctx.beginPath(); ctx.arc(x - 1.7 * u, y + 0.8 * u, 0.9 * u, 0, Math.PI * 2); ctx.arc(x + 1.7 * u, y + 0.8 * u, 0.9 * u, 0, Math.PI * 2); ctx.fill();
+        const sw = Math.sin(t * 2.5 + k) * 0.6;
+        ctx.strokeStyle = 'rgb(90,62,36)'; ctx.lineWidth = 0.9 * u;
+        ctx.beginPath(); ctx.moveTo(x - face * 1 * u, y - 1 * u); ctx.lineTo(x + face * (1.5 + sw) * u, y - (4.5 - sw) * u); ctx.stroke();
+      } else if (base === 'mag') {
+        ctx.fillStyle = n.css;
+        ctx.beginPath(); ctx.moveTo(x, y - 4 * u); ctx.lineTo(x + 1.8 * u, y + 1.4 * u); ctx.lineTo(x - 1.8 * u, y + 1.4 * u); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = skin; ctx.fillRect(x - 0.9 * u, y - 5.4 * u, 1.8 * u, 1.8 * u);
+        ctx.strokeStyle = 'rgb(90,62,36)'; ctx.lineWidth = 0.6 * u;
+        ctx.beginPath(); ctx.moveTo(x + face * 1.8 * u, y + 1.2 * u); ctx.lineTo(x + face * 1.8 * u, y - 5.5 * u); ctx.stroke();
+        const g = 0.6 + 0.4 * Math.sin(t * 6 + k);
+        ctx.fillStyle = `rgba(150,220,255,${0.7 * g})`;
+        ctx.beginPath(); ctx.arc(x + face * 1.8 * u, y - 6 * u, (1 + g * 0.8) * u, 0, Math.PI * 2); ctx.fill();
+      } else if (base === 'drg') {
+        ctx.save(); ctx.fillStyle = '#000'; ctx.font = `${9 * u}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.translate(x, y - 3 * u - Math.sin(t * 4 + k) * u); ctx.scale(face < 0 ? 1 : -1, 1); ctx.fillText('🐉', 0, 0); ctx.restore();
+      } else {
+        ctx.fillStyle = sp === 'heavy' ? 'rgb(120,120,128)' : sp === 'marine' ? 'rgb(60,100,140)' : n.css;
+        ctx.fillRect(x - 1.4 * u, y - 3.2 * u, 2.8 * u, 4.6 * u);
+        if (sp) { ctx.fillStyle = n.css; ctx.fillRect(x - 1.4 * u, y - 1.2 * u, 2.8 * u, 1 * u); }
+        ctx.fillStyle = sp === 'heavy' ? 'rgb(170,170,180)' : skin; ctx.fillRect(x - 1.1 * u, y - 5.4 * u, 2.2 * u, 2.2 * u);
+        ctx.strokeStyle = ink; ctx.lineWidth = 0.8 * u;
+        ctx.beginPath(); ctx.moveTo(x + face * 1.8 * u, y + 1.2 * u); ctx.lineTo(x + face * 2.6 * u, y - 6.8 * u); ctx.stroke();
+      }
+      if (sp && base !== 'drg') { ctx.fillStyle = 'rgb(230,190,60)'; ctx.fillRect(x - 0.5 * u, y - 6 * u, 1 * u, 0.7 * u); }
+    }
+
+    // 会戦: 布陣 → 射撃戦 → 白兵戦 を両軍の隊列で描く
+    drawBattles(now) {
+      const sim = this.sim;
+      if (!sim.battles || !sim.battles.length) return;
+      const ctx = this.ctx, S = this.S, px = this.ui / this.cam.z, zs = this.cam.z * S;
+      const t = now / 1000;
+      const al = this.alpha == null ? 1 : this.alpha;
+      ctx.save();
+      for (const b of sim.battles) {
+        const cx = (b.x + 0.5) * S, cy = (b.y + 0.5) * S;
+        const ux = Math.cos(b.angle), uy = Math.sin(b.angle), vx = -uy, vy = ux;
+        const pa = sim.t - b.phaseT + al;
+        let sep;
+        if (b.phase === 'deploy') sep = 2.8 - 1.3 * Math.min(1, pa / 4);
+        else if (b.phase === 'missile') sep = 1.5;
+        else sep = Math.max(0.42, 1.5 - pa * 0.55);
+        const sides = b.sides.map(sd => ({ sd, str: sim.sideStr(sd), comp: sim.sideComp(sd) }));
+        if (zs >= 2.2) {
+          // 土煙 (白兵戦)
+          if (b.phase === 'melee' && !b.naval) {
+            for (let q = 0; q < 6; q++) {
+              const ph = (t * 0.5 + q / 6) % 1;
+              const ox = (Math.sin(q * 2.3 + t * 0.6) * 1.2 * vx) * S, oy = (Math.sin(q * 2.3 + t * 0.6) * 1.2 * vy) * S - ph * S * 0.8;
+              const r = (0.5 + ph * 0.9) * S;
+              const g = ctx.createRadialGradient(cx + ox, cy + oy, 0, cx + ox, cy + oy, r);
+              g.addColorStop(0, `rgba(150,120,80,${0.3 * (1 - ph)})`); g.addColorStop(1, 'rgba(150,120,80,0)');
+              ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx + ox, cy + oy, r, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+          for (let si = 0; si < 2; si++) {
+            const { sd, str, comp } = sides[si];
+            const f = si === 0 ? 1 : -1;                     // 敵の方向
+            const fx = cx - ux * f * sep * S, fy = cy - uy * f * sep * S; // 前線の中心
+            const face = ux * f < -0.2 ? -1 : 1;
+            const lead = sim.nations[sd.lead] || sim.nations[sd.armies[0] && sd.armies[0].n];
+            if (!lead) continue;
+            if (b.naval) {
+              const ships = TW.clamp(Math.round(Math.sqrt(str) / 2.5), 2, 7);
+              for (let q = 0; q < ships; q++) {
+                const along = (q - (ships - 1) / 2) * 0.7, depth = (q % 2) * 0.5;
+                const sx = fx - ux * f * depth * S + vx * along * S, sy = fy - uy * f * depth * S + vy * along * S + Math.sin(t * 2 + q) * 1.5 * px;
+                const sc = px * 1.1;
+                ctx.lineWidth = 1.2 * px; ctx.strokeStyle = 'rgb(40,26,16)';
+                ctx.beginPath(); ctx.moveTo(sx - 8 * sc, sy); ctx.lineTo(sx + 8 * sc, sy); ctx.lineTo(sx + 5 * sc, sy + 4 * sc); ctx.lineTo(sx - 5 * sc, sy + 4 * sc); ctx.closePath();
+                ctx.fillStyle = 'rgb(120,86,56)'; ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy - 12 * sc); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sx + 1 * sc, sy - 11 * sc); ctx.lineTo(sx + 7 * sc, sy - 3 * sc); ctx.lineTo(sx + 1 * sc, sy - 2 * sc); ctx.closePath();
+                ctx.fillStyle = lead.css; ctx.fill(); ctx.stroke();
+              }
+              continue;
+            }
+            const count = TW.clamp(Math.round(Math.sqrt(str) * 3.2), 8, 48);
+            // 兵種ごとの人数
+            const cnt = {};
+            let rest = count;
+            for (const k of TW.UKEYS) { cnt[k] = Math.round((comp[k] || 0) * count); rest -= cnt[k]; }
+            cnt.inf += rest;
+            const spBase = lead.special && TW.SPECIALS ? TW.SPECIALS[lead.special].base : 'inf';
+            const rows = { front: [], second: [], rear: [], flank: [] };
+            const put = (k, n) => { for (let q = 0; q < n; q++) { const b2 = k === 'spc' ? spBase : k; (b2 === 'inf' ? rows.front : b2 === 'arc' || b2 === 'mag' ? rows.second : b2 === 'sie' ? rows.rear : rows.flank).push(k); } };
+            for (const k of TW.UKEYS) put(k, Math.max(0, cnt[k]));
+            const u = TW.clamp(zs / 10, 0.8, 1.35) * px;
+            const sp2 = 0.36;
+            const lines = [[rows.front, 0], [rows.second, 0.55], [rows.rear, 1.05]];
+            let halfW = 0;
+            let kk = 0;
+            for (const [list, depth] of lines) {
+              const perRow = Math.max(6, Math.ceil(list.length / 2));
+              list.forEach((k, q) => {
+                const r2 = Math.floor(q / perRow), c2 = q % perRow;
+                const along = (c2 - (Math.min(perRow, list.length - r2 * perRow) - 1) / 2) * sp2;
+                halfW = Math.max(halfW, Math.abs(along));
+                let d = depth + r2 * 0.3;
+                if (b.phase === 'melee' && depth === 0) d -= Math.sin(t * 8 + q * 1.7) * 0.08 + 0.05;
+                const sx = fx - ux * f * d * S + vx * along * S;
+                const sy = fy - uy * f * d * S + vy * along * S;
+                this.drawFigure(k, sx + (b.phase === 'melee' && depth === 0 ? Math.sin(t * 17 + q) * 0.6 * px : 0), sy, u, lead, face, t, kk++, b.phase === 'deploy');
+              });
+            }
+            // 騎兵は両翼から回り込む
+            rows.flank.forEach((k, q) => {
+              const sideSign = q % 2 ? 1 : -1;
+              const along = sideSign * (halfW + 0.45 + Math.floor(q / 2) * 0.32);
+              let d = 0.2;
+              if (b.phase === 'melee') d -= Math.min(1, pa / 1.5) * 0.9 - Math.sin(t * 7 + q) * 0.1;
+              const sx = fx - ux * f * d * S + vx * along * S;
+              const sy = fy - uy * f * d * S + vy * along * S;
+              this.drawFigure(k, sx, sy, u, lead, face, t, kk++, true);
+            });
+            // 軍旗と将軍
+            sd.armies.forEach((a, q) => {
+              const along = (q - (sd.armies.length - 1) / 2) * 0.7;
+              const d = 1.6;
+              const x = fx - ux * f * d * S + vx * along * S, y = fy - uy * f * d * S + vy * along * S;
+              const n = sim.nations[a.n];
+              const sc = 1.1 * px, wave = Math.sin(t * 4 + a.id) * 1.2;
+              ctx.lineWidth = 1.3 * px; ctx.strokeStyle = 'rgb(40,26,16)';
+              ctx.beginPath(); ctx.moveTo(x, y + 3 * sc); ctx.lineTo(x, y - 14 * sc); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(x, y - 14 * sc); ctx.lineTo(x + 11 * sc, y - 13 * sc + wave * sc); ctx.lineTo(x + 11 * sc, y - 7 * sc + wave * sc); ctx.lineTo(x, y - 8 * sc); ctx.closePath();
+              ctx.fillStyle = n ? n.css : '#888'; ctx.fill(); ctx.stroke();
+              if (zs >= 7 && a.gen) {
+                ctx.font = `italic 700 ${8 * px}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                const gn = sim.genName(a.gen);
+                ctx.lineWidth = 2.2 * px; ctx.strokeStyle = 'rgba(246,236,210,0.9)'; ctx.strokeText(gn, x + 5 * sc, y - 15 * sc);
+                ctx.fillStyle = 'rgb(60,40,24)'; ctx.fillText(gn, x + 5 * sc, y - 15 * sc);
+              }
+            });
+          }
+          // 矢の雨 (射撃戦以降)
+          if (b.phase !== 'deploy') {
+            ctx.strokeStyle = 'rgba(50,34,20,0.85)'; ctx.lineWidth = 0.8 * px;
+            ctx.beginPath();
+            for (let si = 0; si < 2; si++) {
+              const arcShare = (sides[si].comp.arc || 0) + (sides[si].comp.mag || 0) + (sides[si].comp.sie || 0) * 0.5;
+              const nArrows = Math.round(arcShare * 18) + 2;
+              const f = si === 0 ? 1 : -1;
+              for (let q = 0; q < nArrows; q++) {
+                const ph = (t * 1.1 + q * 0.137 + si * 0.5) % 1;
+                const along = ((q * 0.618) % 1 - 0.5) * 3;
+                const sx = cx - ux * f * (sep + 0.6) * S + vx * along * S, sy = cy - uy * f * (sep + 0.6) * S + vy * along * S;
+                const ex = cx + ux * f * (sep + 0.2) * S + vx * along * S * 0.8, ey = cy + uy * f * (sep + 0.2) * S + vy * along * S * 0.8;
+                const xx = sx + (ex - sx) * ph, yy = sy + (ey - sy) * ph - Math.sin(ph * Math.PI) * 1.4 * S;
+                const dx = ex - sx, dy = ey - sy - Math.cos(ph * Math.PI) * 2.8 * S, dl = Math.hypot(dx, dy) || 1;
+                ctx.moveTo(xx, yy); ctx.lineTo(xx - dx / dl * 3.5 * px, yy - dy / dl * 3.5 * px);
+              }
+            }
+            ctx.stroke();
+          }
+          // 火花 (白兵戦)
+          if (b.phase === 'melee') {
+            ctx.strokeStyle = 'rgba(255,220,140,0.95)'; ctx.lineWidth = 1.1 * px;
+            ctx.beginPath();
+            for (let q = 0; q < 10; q++) {
+              if (Math.sin(t * 23 + q * 7.1 + b.id) < 0.3) continue;
+              const along = ((q * 0.37) % 1 - 0.5) * 2.4;
+              const x = cx + vx * along * S, y = cy + vy * along * S - 3 * px;
+              const an = q * 1.05 + t * 2;
+              ctx.moveTo(x + Math.cos(an) * 2 * px, y + Math.sin(an) * 2 * px);
+              ctx.lineTo(x + Math.cos(an) * 5 * px, y + Math.sin(an) * 5 * px);
+            }
+            ctx.stroke();
+          }
+        }
+        // 戦況ゲージ (いつでも表示)
+        const hx = cx, hy = cy - Math.max(2.4 * S, 34 * px);
+        const W2 = 74 * px, H2 = 28 * px;
+        ctx.fillStyle = 'rgba(40,26,16,0.82)';
+        ctx.fillRect(hx - W2 / 2, hy - H2 / 2, W2, H2);
+        ctx.strokeStyle = 'rgba(201,163,95,0.9)'; ctx.lineWidth = 1 * px; ctx.strokeRect(hx - W2 / 2, hy - H2 / 2, W2, H2);
+        ctx.font = `700 ${8.5 * px}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = 'rgb(255,236,190)';
+        ctx.fillText((b.ambush >= 0 ? '奇襲・' : '') + (b.naval ? (b.phase === 'melee' ? '接舷戦' : b.phase === 'missile' ? '砲撃戦' : '会敵') : TW.BATTLE_PHASES[b.phase]), hx, hy - H2 / 2 + 2 * px);
+        for (let si = 0; si < 2; si++) {
+          const { sd, str } = sides[si];
+          const lead = sim.nations[sd.lead];
+          const by = hy - 1 * px + si * 7 * px;
+          const bw = W2 - 8 * px;
+          ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(hx - bw / 2, by, bw, 4 * px);
+          ctx.fillStyle = lead ? lead.css : '#999'; ctx.fillRect(hx - bw / 2, by, bw * TW.clamp(str / Math.max(1, sd.str0), 0, 1), 4 * px);
+          ctx.fillStyle = 'rgba(255,230,120,0.9)'; ctx.fillRect(hx - bw / 2, by + 4.3 * px, bw * TW.clamp(sd.morale / 100, 0, 1), 1.3 * px);
+        }
+        if (zs >= 3.5) {
+          ctx.font = `700 ${9 * px}px ${FONT}`; ctx.textBaseline = 'bottom';
+          ctx.lineWidth = 2.6 * px; ctx.strokeStyle = 'rgba(246,236,210,0.9)'; ctx.strokeText(b.name, hx, hy - H2 / 2 - 2 * px);
+          ctx.fillStyle = 'rgb(120,20,10)'; ctx.fillText(b.name, hx, hy - H2 / 2 - 2 * px);
+        }
+      }
+      ctx.restore();
+    }
+
+    // 氷の女王の冬
+    drawFrost(now) {
+      const sim = this.sim, w = this.w;
+      if (!this.frostCv || this.frostCv.width !== w.W) {
+        this.frostCv = document.createElement('canvas'); this.frostCv.width = w.W; this.frostCv.height = w.H;
+        this.frostImg = this.frostCv.getContext('2d').createImageData(w.W, w.H);
+        this.lastFrost = 0;
+      }
+      if (sim.frostDirty && now - (this.lastFrost || 0) > 300) {
+        const d = this.frostImg.data, fr = sim.frost;
+        for (let i = 0; i < w.N; i++) {
+          const k = i * 4;
+          if (fr && fr[i]) { d[k] = 236; d[k + 1] = 246; d[k + 2] = 255; d[k + 3] = 175; } else d[k + 3] = 0;
+        }
+        this.frostCv.getContext('2d').putImageData(this.frostImg, 0, 0);
+        sim.frostDirty = false; this.lastFrost = now;
+        if (!fr) { this.frostCv = null; return; }
+      }
+      const ctx = this.ctx;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(this.frostCv, 0, 0, this.WW, this.WH);
     }
 
     // 古戦場
@@ -1082,6 +1354,21 @@
           ctx.beginPath(); ctx.moveTo(0, -17 * px); ctx.lineTo(12 * px, -15 * px); ctx.lineTo(12 * px, -9 * px); ctx.lineTo(0, -10 * px); ctx.closePath();
           ctx.fillStyle = e.color || '#888'; ctx.fill(); ctx.stroke();
           ctx.restore();
+          continue;
+        }
+        if (e.type === 'sink') {
+          // 艦隊が沈む
+          ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y + k * 8 * px); ctx.rotate(k * 0.9);
+          ctx.strokeStyle = 'rgb(40,26,16)'; ctx.lineWidth = 1.2 * px;
+          ctx.beginPath(); ctx.moveTo(-8 * px, 0); ctx.lineTo(8 * px, 0); ctx.lineTo(5 * px, 4 * px); ctx.lineTo(-5 * px, 4 * px); ctx.closePath();
+          ctx.fillStyle = 'rgb(110,80,52)'; ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -11 * px); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(1 * px, -10 * px); ctx.lineTo(7 * px, -3 * px); ctx.lineTo(1 * px, -2 * px); ctx.closePath();
+          ctx.fillStyle = e.color || '#888'; ctx.fill(); ctx.stroke();
+          ctx.restore();
+          ctx.globalAlpha = a * 0.8; ctx.strokeStyle = 'rgba(230,240,240,0.9)'; ctx.lineWidth = 1.2 * px;
+          for (let q = 0; q < 2; q++) { ctx.beginPath(); ctx.ellipse(x, y + 5 * px, (6 + k * 14 + q * 5) * px, (2 + k * 4 + q * 1.5) * px, 0, 0, Math.PI * 2); ctx.stroke(); }
+          ctx.globalAlpha = 1;
           continue;
         }
         if (e.type === 'threat') {

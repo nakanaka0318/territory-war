@@ -6,7 +6,7 @@
   const SPEEDS = [0.5, 1, 2, 4, 8, 16, 32];
   const SPEED_LABELS = ['½', '1', '2', '4', '8', '16', '32'];
   const TPS = 2.5; // x1 のときの1秒あたりティック数 (x4 で年4.8秒、x32 で年0.6秒)
-  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️', wonder: '🏛️', poem: '🪕', op: '🎯', army: '🚩', siege: '🔥', fort: '🏯', general: '🎖️', nature: '🌿', threat: '⚠️', coalition: '⚔' };
+  const ICON = { war: '⚔️', peace: '🕊️', alliance: '🤝', capture: '🏰', capital: '👑', destroy: '💀', rebel: '🔥', battle: '🗡️', god: '✨', betray: '🐍', era: '📜', culture: '🎭', develop: '🏗️', wonder: '🏛️', poem: '🪕', op: '🎯', army: '🚩', siege: '🔥', fort: '🏯', general: '🎖️', nature: '🌿', threat: '⚠️', coalition: '⚔', battlestart: '⚔️', reinforce: '🚩', ambush: '🌲' };
   const MAJOR_TYPES = new Set(['war', 'peace', 'alliance', 'rebel', 'destroy', 'capital', 'betray', 'god', 'era', 'culture', 'poem', 'op', 'general', 'nature', 'threat', 'coalition']);
 
   const canvas = $('#map');
@@ -99,7 +99,8 @@
     if (e.major) li.className = 'major';
     li.innerHTML = `<span class="ic">${ICON[e.type] || '・'}</span><span><span class="yr">${e.year}年</span> ${escapeHtml(e.text)}</span>`;
     li.dataset.seq = e.seq;
-    if (e.x != null) li.addEventListener('click', () => gotoEvent(e));
+    if (e.battleId) li.classList.add('has-rep');
+    if (e.x != null) li.addEventListener('click', () => { gotoEvent(e); if (e.battleId) openBattle(e.battleId); });
     ul.prepend(li);
     while (ul.children.length > 300) ul.lastChild.remove();
   }
@@ -244,7 +245,7 @@
       const yrs = Math.floor((sim.t - th.start) / TW.TPY);
       const tArmies = sim.armies.filter(a => a.n === th.nId);
       const barrier = sim.t - th.start < TW.TPY * 5 ? '・拠点は結界に守られている' : '';
-      html = `<span class="ic">${th.def.icon}</span><span class="msg"><b>世界の脅威: ${escapeHtml(th.name)}</b>　出現から${yrs}年・軍勢${tArmies.length}・兵${TW.fmtTroops(tArmies.reduce((s, a) => s + a.str, 0))}${barrier}　— 世界連合が対抗中</span>`;
+      html = `<span class="ic">${th.def.icon}</span><span class="msg"><b>世界の脅威: ${escapeHtml(th.name)}</b>　出現から${yrs}年・軍勢${tArmies.length}・兵${TW.fmtTroops(tArmies.reduce((s, a) => s + a.str, 0))}${barrier}　— 諸国が対抗中</span>`;
       pos = lair;
       el.className = 'threat';
     } else if (sim.coalition) {
@@ -416,6 +417,58 @@
       `<div class="rel"><div class="h">歴史</div><ul class="ev">${evHtml || '<li>まだ記録はない</li>'}</ul></div>`;
     $('#goto-cap').onclick = () => R.centerOn(cap.x, cap.y, 4);
   }
+  // ---------- 戦記 ----------
+  function compRows(comp, special) {
+    return TW.UKEYS.filter(k => (comp[k] || 0) > 0.005).map(k => {
+      const name = k === 'spc' ? (special ? TW.SPECIALS[special].name : '特色兵') : TW.UNITS[k].name;
+      return `<div class="cr"><span>${name}</span><span class="crbar"><i style="width:${comp[k] * 100}%"></i></span><b>${Math.round(comp[k] * 100)}%</b></div>`;
+    }).join('');
+  }
+  function battleHtml(r) {
+    const sideHtml = (sd, i) => {
+      const lossPct = sd.str0 ? Math.round(sd.losses / sd.str0 * 100) : 0;
+      return `<div class="br-side ${r.winner === i ? 'win' : r.winner >= 0 ? 'lose' : ''}">` +
+        `<div class="br-names">${sd.nations.map(v => `<span class="chip"><span class="sw" style="background:${v.css}"></span>${escapeHtml(v.name)}</span>`).join('')}</div>` +
+        `<table><tr><td>兵力</td><td>${TW.fmtTroops(sd.str0)} → ${TW.fmtTroops(sd.end)}</td></tr>` +
+        `<tr><td>損害</td><td>${TW.fmtTroops(sd.losses)}（${lossPct}%）</td></tr>` +
+        (sd.late ? `<tr><td>援軍</td><td>${TW.fmtTroops(sd.late)}</td></tr>` : '') +
+        `<tr><td>士気</td><td><span class="meter"><i style="width:${Math.min(100, sd.morale)}%"></i></span></td></tr>` +
+        `<tr><td>将軍</td><td>${sd.gens.length ? sd.gens.map(g => escapeHtml(g.name) + (g.fate === 'dead' ? '（戦死）' : '')).join('<br>') : '—'}</td></tr></table>` +
+        `<div class="h">編成</div>${compRows(sd.comp, sd.specials[0])}</div>`;
+    };
+    const winnerNames = r.winner >= 0 ? r.sides[r.winner].nations.map(v => escapeHtml(v.name)).join('・') : '';
+    return `<h2>⚔ ${escapeHtml(r.name)}</h2>` +
+      `<div class="sub">暦${r.year}年${r.month}月・${escapeHtml(r.terrain)}${r.naval ? '・海戦' : ''}${r.ambush >= 0 ? '・伏兵の奇襲' : ''}・${r.duration}週</div>` +
+      `<div class="br-result">${r.live ? `交戦中 — <b>${r.naval ? '海戦' : TW.BATTLE_PHASES[r.phase]}</b>` : r.winner >= 0 ? `勝者: <b>${winnerNames}</b>` : '決着つかず（両軍撤退）'}</div>` +
+      (r.factors && r.factors.length ? `<div class="br-factors"><div class="h">勝敗の決め手</div><ul>${r.factors.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul></div>` : '') +
+      `<div class="br-sides">${sideHtml(r.sides[0], 0)}<div class="vs">VS</div>${sideHtml(r.sides[1], 1)}</div>` +
+      `<div class="br-log"><div class="h">戦いの経過</div><ul>${r.log.map(l => `<li><b>${l.year}年${l.month}月</b> ${escapeHtml(l.text)}</li>`).join('')}</ul></div>`;
+  }
+  function openBattle(id, live) {
+    const sim = app.sim;
+    let r = null;
+    if (live) { const b = sim.battleById(id); if (b) r = sim.battleSnapshot(b); }
+    if (!r) r = sim.battleReport(id);
+    if (!r) { toast('この戦いの記録は残っていません'); return; }
+    $('#battle-body').innerHTML = battleHtml(r);
+    $('#modal-battle').hidden = false;
+    app.battleOpen = live && r.live ? id : null;
+  }
+  app.openBattle = openBattle;
+  $('#battle-close').addEventListener('click', () => { $('#modal-battle').hidden = true; app.battleOpen = null; });
+  $('#modal-battle').addEventListener('click', ev => { if (ev.target.id === 'modal-battle') { $('#modal-battle').hidden = true; app.battleOpen = null; } });
+  // 進行中の会戦は開いている間も更新する
+  setInterval(() => {
+    if (!app.battleOpen || $('#modal-battle').hidden || !app.sim) return;
+    const b = app.sim.battleById(app.battleOpen);
+    if (b) $('#battle-body').innerHTML = battleHtml(app.sim.battleSnapshot(b));
+    else {
+      const rep = app.sim.battleReport(app.battleOpen);
+      if (rep) $('#battle-body').innerHTML = battleHtml(rep);
+      app.battleOpen = null;
+    }
+  }, 600);
+
   function militaryBlock(sim, n) {
     const armies = sim.armies.filter(a => a.n === n.id && a.gen);
     const forts = sim.forts.filter(f => f.owner === n.id);
@@ -425,6 +478,13 @@
     if (armies.length) {
       h += `<div class="rel"><div class="h">🎖️ 出陣中の将軍</div>${armies.sort((a, b) => b.str - a.str).slice(0, 8).map(a =>
         `<div class="wown">${escapeHtml(sim.genName(a.gen))} <small>${TW.fmtTroops(a.str)}・${a.gen.wins}勝${a.gen.losses}敗</small></div>`).join('')}</div>`;
+    }
+    if (n.doctrine) {
+      const comp = sim.makeComp(n);
+      const sp = n.special && TW.SPECIALS[n.special];
+      h += `<div class="rel"><div class="h">⚔️ 兵制</div>${compRows(comp, n.special)}` +
+        (sp ? `<div class="hint">特色兵「${sp.name}」— ${sp.desc}</div>` : '') +
+        (n.era >= 6 ? `<div class="hint">✨ 魔導兵${n.era >= 7 ? '・🐉 竜騎士' : ''}を擁する</div>` : '<div class="hint">文化が啓蒙期に達すると魔導兵、栄華期で竜騎士が加わる</div>') + `</div>`;
     }
     if (forts.length) h += `<div class="rel"><div class="h">🏯 砦</div>${forts.map(f => escapeHtml(f.name)).join('、')}</div>`;
     const ops = sim.ops.filter(op => op.status === 'active' && op.n === n.id);
@@ -731,9 +791,15 @@
     if (!sim || c.i < 0) { if (app.tool === 'look') select(null); return; }
     const o = sim.w.land[c.i] ? sim.owner[c.i] : -1;
     switch (app.tool) {
-      case 'look':
+      case 'look': {
+        // 会戦中の場所 → 戦況、古戦場 → 戦記
+        const bt = (sim.battles || []).find(b => Math.hypot(b.x - c.fx + 0.5, b.y - c.fy + 0.5) < 2.2);
+        if (bt) { openBattle(bt.id, true); break; }
+        const bf = sim.battlefields.find(b => b.reportId && Math.hypot(b.x - c.fx + 0.5, b.y - c.fy + 0.5) < 1.2);
+        if (bf && sim.battleReport(bf.reportId)) { openBattle(bf.reportId); break; }
         if (o >= 0) select(sim.nations[o].uid); else select(null);
         break;
+      }
       case 'plague': sim.godPlague(c.fx - 0.5, c.fy - 0.5); TW.Audio.play('plague'); break;
       case 'disaster': sim.godDisaster(c.fx - 0.5, c.fy - 0.5); TW.Audio.play('disaster'); break;
       case 'bless':
@@ -859,7 +925,9 @@
       const ft = sim.forts.find(f => Math.abs(f.x - c.cx) <= 1 && Math.abs(f.y - c.cy) <= 1);
       if (ft) html += `🏯 ${escapeHtml(ft.name)}（守備 ${Math.round(ft.hp / ft.maxHp * 100)}%）<br>`;
       const bf = sim.battlefields.find(b => Math.abs(b.x - c.cx) <= 1 && Math.abs(b.y - c.cy) <= 1);
-      if (bf) html += `⚔ 古戦場: ${escapeHtml(bf.name)}（${bf.year}年）<br>`;
+      if (bf) html += `⚔ 古戦場: ${escapeHtml(bf.name)}（${bf.year}年）${bf.reportId ? ' — クリックで戦記' : ''}<br>`;
+      const bt = (sim.battles || []).find(b => Math.hypot(b.x - c.fx + 0.5, b.y - c.fy + 0.5) < 2.2);
+      if (bt) html += `<b style="color:#a51c12">⚔ ${escapeHtml(bt.name)}（${bt.naval ? '海戦' : TW.BATTLE_PHASES[bt.phase]}）— クリックで戦況</b><br>`;
       const rl = TW.roadLevel(sim.road[c.i]);
       html += `${t.name}${w.river[c.i] ? '・川' : ''}${rl ? '・' + TW.ROAD_NAMES[rl] : ''}`;
       // 近くの都市
@@ -881,6 +949,7 @@
       if (Math.hypot(ax / R.S - c.fx, ay / R.S - c.fy) < 1.3) {
         const n = sim.nations[a.n];
         const mode = { attack: '進軍中', chase: '追撃中', siege: '攻囲中', home: '帰還中', idle: '待機' }[a.mode] || '';
+        if (a.comp) html += `<br>${TW.UKEYS.filter(k => a.comp[k] > 0.05).map(k => (k === 'spc' && n.special ? TW.SPECIALS[n.special].name : TW.UNITS[k].name) + Math.round(a.comp[k] * 100) + '%').join(' ')}`;
         html += `<br>🚩 ${escapeHtml(n.name)}軍 ${TW.fmtTroops(a.str)}${a.gen ? '（' + escapeHtml(sim.genName(a.gen)) + ' ' + a.gen.wins + '勝）' : ''} 質×${sim.quality(a.n).toFixed(2)} ${a.fighting ? '<b style="color:#a51c12">交戦中</b>' : mode}`;
       }
     }

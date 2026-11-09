@@ -40,7 +40,14 @@
     { key: 'demon', title: '魔王', lair: '魔王城', icon: '👿', unit: '👹', color: [74, 26, 78], slayer: '魔王討伐の', desc: '魔界の門から魔王の軍勢が溢れ出し、都市を次々と呑み込んでいく' },
     { key: 'dragon', title: '古竜', lair: '竜の巣', icon: '🐉', unit: '🐉', color: [150, 44, 24], slayer: '竜殺しの', desc: '眠りから覚めた古竜が空を舞い、都市を焼き払う' },
     { key: 'undead', title: '不死王', lair: '死者の墓所', icon: '💀', unit: '💀', color: [58, 72, 64], slayer: '不死祓いの', desc: '古戦場の死者が蘇り、倒れた兵を仲間に加えながら進軍する' },
+    { key: 'frost', title: '氷の女王', lair: '氷の城', icon: '❄️', unit: '🐺', color: [120, 168, 205], slayer: '春を呼ぶ', desc: '北の果てで氷の女王が目覚め、凍てつく冬が大地を覆い始めた' },
+    { key: 'deep', title: '深海王', lair: '深淵の門', icon: '🐙', unit: '🦑', color: [28, 92, 104], slayer: '海神殺しの', desc: '海の底から異形の艦隊が現れ、港町を次々と襲う' },
+    { key: 'cult', title: '邪神', lair: '邪神の神殿', icon: '🕯️', unit: '👁️', color: [112, 40, 132], slayer: '邪教討伐の', desc: '各地の都市で狂信者が蜂起し、邪神の教団が内側から国々を蝕む' },
   ];
+  const THREAT_NAME = {
+    demon: r => `魔王${r}の軍勢`, dragon: r => `古竜${r}`, undead: r => `不死王${r}の軍勢`,
+    frost: r => `氷の女王${r}`, deep: r => `深海王${r}の眷属`, cult: r => `邪神${r}の教団`,
+  };
   // 将軍の二つ名
   const EPITHETS = ['赤髭の', '隻眼の', '白銀の', '獅子の', '鉄壁の', '疾風の', '老練なる', '若き', '黒鉄の', '雷の', '静かなる', '狼の'];
   const OP_WORDS = ['鉄槌', '疾風', '紅蓮', '黎明', '獅子', '雷鳴', '大鷲', '落日', '暁', '氷刃', '月影', '烈火'];
@@ -325,6 +332,7 @@
       if (this.t % 4 === 0) this.armyAI();
       this.moveArmies();
       this.resolveBattles();
+      if (this.melting) this.tickWorldEffects();
       this.sieges();
       if (this.t % 12 === 0) { this.cleanupPockets(); this.computeLabels(); }
       if (this.t % TPY === 0) this.yearly();
@@ -338,7 +346,12 @@
       }
       for (const c of this.cities) {
         if (c.owner >= 0) { const n = this.nations[c.owner]; n.cityCount++; n.cityPop += c.pop; n.devSum += c.dev; }
-        if (c.besieged < this.t - 2) { const md = this.maxDefense(c); if (c.defense < md) c.defense = Math.min(md, c.defense + md * 0.012); c.assault = 0; }
+        if (c.besieged < this.t - 2) {
+          const md = this.maxDefense(c); if (c.defense < md) c.defense = Math.min(md, c.defense + md * 0.012); c.assault = 0;
+          if (c.food != null && c.food < 100) c.food = Math.min(100, c.food + 1.5);
+        }
+        // 氷の女王の冬
+        if (this.frost && this.frost[c.i] && c.owner !== this.frostN) { c.pop = Math.max(0.3, c.pop * 0.9985); c.dev *= 0.9993; }
       }
       for (const a of this.armies) { const n = this.nations[a.n]; n.armyStr += a.str; n.armyCount++; }
       for (const n of this.nations) if (n) n.wonders = [];
@@ -461,6 +474,7 @@
         if (o >= 0 && o !== n && this.rel[n * MAXN + o] !== 1 && this.rel[n * MAXN + o] !== 2) c += 40;
         if (w.river[j] && !w.river[i]) c += rl >= 2 ? 0.3 : 1.2; // 街道には橋が架かる
         if (!w.land[i]) c += 3; // 上陸
+        if (this.frost && this.frost[j] && n !== this.frostN) c += 2.5;
       } else {
         c = w.terrain[j] === T.SEA ? 2.4 : 3.4;
         if (n >= 0 && this.nations[n] && this.nations[n].seaFast) c *= 0.7;
@@ -713,6 +727,7 @@
           const [big, small] = a.str >= b.str ? [a, b] : [b, a];
           // 経験豊富な将軍が指揮を執る
           if (small.gen && (!big.gen || small.gen.wins > big.gen.wins)) { const g = big.gen; big.gen = small.gen; small.gen = g; }
+          if (this.mixComp) this.mixComp(big, small);
           big.str += small.str; big.maxStr += small.maxStr;
           this.returnGeneral(small);
           small.str = 0;
@@ -734,6 +749,7 @@
           a.str -= part; a.maxStr = Math.max(a.str, a.maxStr - part);
           const c = { i: a.i, x: a.x, y: a.y };
           const b = this.spawnArmy(n, c, part);
+          if (a.comp) b.comp = { ...a.comp };
           if (a.target) tcount.set(a.target.type + a.target.id, (tcount.get(a.target.type + a.target.id) || 0) + 2);
           b.mode = 'idle';
           a.noMerge = b.noMerge = this.t + TPY;
@@ -745,10 +761,10 @@
     }
 
     // ---------- 古戦場 ----------
-    addBattlefield(x, y, name, total) {
+    addBattlefield(x, y, name, total, reportId) {
       const ex = this.battlefields.find(b => (b.x - x) ** 2 + (b.y - y) ** 2 < 9);
-      if (ex) { ex.count++; if (total > ex.total) { ex.total = total; } return; }
-      this.battlefields.push({ x, y, name, year: this.year(), total, count: 1 });
+      if (ex) { ex.count++; if (total > ex.total) { ex.total = total; if (reportId) ex.reportId = reportId; } return; }
+      this.battlefields.push({ x, y, name, year: this.year(), total, count: 1, reportId: reportId || null });
       if (this.battlefields.length > 60) { this.battlefields.sort((a, b) => b.total - a.total); this.battlefields.length = 50; }
     }
 
@@ -790,6 +806,19 @@
         if (!w.land[e.i]) s *= 0.4;
         s /= 1 + (tcount.get('army' + e.id) || 0) * 0.8;
         if (s > bs) { bs = s; best = { type: 'army', id: e.id }; }
+      }
+      // 包囲された自国の都市への援軍
+      for (const c of this.cities) {
+        if (c.owner !== n.id || c.besieged < this.t - 3) continue;
+        const d = Math.hypot(c.x - fx, c.y - fy);
+        if (d > 35) continue;
+        for (const e of this.armies) {
+          if (e.mode !== 'siege' || !e.target || e.target.type !== 'city' || e.target.id !== c.id || !this.atWar(n.id, e.n)) continue;
+          let s = 4.5 / (d + 4);
+          if (myStr < e.str * 0.5) s *= 0.4;
+          s /= 1 + (tcount.get('army' + e.id) || 0) * 0.6;
+          if (s > bs) { bs = s; best = { type: 'army', id: e.id }; }
+        }
       }
       // 敵の砦
       for (const f of this.forts) {
@@ -929,7 +958,7 @@
         a.vx0 = v[0]; a.vy0 = v[1];
         a.px = a.x; a.py = a.y;
         if (a.str <= 0) continue;
-        if (a.fighting && !(a.mode === 'home' && a.retreat > this.t)) continue;
+        if (a.battle) continue;
         if (a.mode === 'siege') continue;
         if (!a.path || a.pi >= a.path.length) {
           if (a.path) this.arrive(a);
@@ -1015,68 +1044,6 @@
       a.mode = 'idle'; a.target = null;
     }
 
-    resolveBattles() {
-      const A = this.armies;
-      for (const a of A) { a.dmg = 0; a.foe = null; a.nfoe = 0; }
-      const pairs = [];
-      for (let p = 0; p < A.length; p++) {
-        const a = A[p];
-        for (let q = p + 1; q < A.length; q++) {
-          const b = A[q];
-          if (this.rel[a.n * MAXN + b.n] !== 1) continue;
-          const dx = a.x - b.x, dy = a.y - b.y;
-          if (dx * dx + dy * dy > 2.6) continue;
-          pairs.push(a, b); a.nfoe++; b.nfoe++;
-        }
-      }
-      for (let k = 0; k < pairs.length; k += 2) {
-        const a = pairs[k], b = pairs[k + 1];
-        const da = this.defMod(a), db = this.defMod(b);
-        b.dmg += a.str * 0.032 * (0.6 + this.rand() * 0.8) * this.quality(a.n) * this.genSkill(a.gen) / db / a.nfoe;
-        a.dmg += b.str * 0.032 * (0.6 + this.rand() * 0.8) * this.quality(b.n) * this.genSkill(b.gen) / da / b.nfoe;
-        if (!a.foe || a.foe.str < b.str) a.foe = b;
-        if (!b.foe || b.foe.str < a.str) b.foe = a;
-      }
-      for (const a of A) {
-        if (a.foe) {
-          if (!a.fighting) { a.bStr = a.str; a.bFoeStr = a.foe.str; a.bFoeN = a.foe.n; }
-          a.fighting = a.foe.id;
-          a.str -= a.dmg;
-          // 劣勢なら撤退
-          if (a.str > 2 && a.str < a.foe.str * 0.3 && a.mode !== 'home') { a.retreat = this.t + 30; this.sendHome(a); }
-        } else if (a.fighting) {
-          a.fighting = null;
-          if (a.str > 2 && a.gen && (a.bFoeStr || 0) >= 15 && !(a.retreat > this.t) && !(a.winCounted >= this.t - 1)) a.gen.wins++;
-          if (a.bStr + (a.bFoeStr || 0) > 350 && a.str > 2 && a.bStr > a.str) {
-            // 勝利側が戦闘記録を残す
-            const loser = this.nations[a.bFoeN];
-            if (!(a.battleLogged >= this.t - 1)) this.recordBattle(a, loser, a.bFoeStr || 0, false);
-          }
-        }
-      }
-      for (const a of A) {
-        if (a.str <= 2 && a.foe) {
-          const win = a.foe;
-          const wn = this.nations[win.n], ln = this.nations[a.n];
-          wn.battlesWon++; ln.battlesLost++;
-          win.winCounted = this.t;
-          if (win.gen && a.bStr >= 10) { win.gen.wins++; const size = a.bStr + (a.bFoeStr || 0); if (size > win.gen.bestSize) { win.gen.bestSize = size; const pl = this.nearestCity(a.x, a.y); win.gen.best = pl ? pl.name + '近郊の戦い' : '海戦'; } }
-          this.effect('flagfall', a.x, a.y, 1, { color: ln.css });
-          this.loseGeneral(a, win);
-          if (this.threat && this.threat.type === 'undead' && win.n === this.threat.nId && !ln.isThreat && a.bStr > 10) {
-            const ua = this.spawnArmy(wn, { i: a.i, x: a.x, y: a.y }, a.bStr * 0.4);
-            ua.mode = 'idle';
-            this.effect('rebel', a.x, a.y, 2, { color: wn.css });
-          }
-          if (a.flying && this.threat && a.n === this.threat.nId) this.pendingSlay = { by: win.n, gen: win.gen };
-          this.warScore[win.n * MAXN + a.n] += a.bStr / 15;
-          if (a.bStr + (a.bFoeStr || 0) > 220 && !(win.battleLogged >= this.t - 1)) { this.recordBattle(win, ln, a.bStr, true); win.battleLogged = this.t; }
-          a.str = 0;
-        } else if (a.str <= 2) { this.returnGeneral(a); a.str = 0; }
-      }
-      if (this.pendingSlay) this.checkSlay();
-    }
-
     // ---------- 世界の脅威 ----------
     spawnThreat(forceKey, at, byGod) {
       if (this.threat) return null;  // 世界の脅威は同時に1つだけ
@@ -1086,7 +1053,46 @@
       const caps = alive.map(n => this.cities[n.capital]);
       // 拠点: 首都から遠い陸地 (不死の軍勢は最大の古戦場)
       let best = -1, bs = -1;
-      if (at) {
+      let lairCity = null;
+      if (def.key === 'cult') {
+        // 邪神の教団は既存の都市を乗っ取って神殿にする
+        const cand = this.cities.filter(c => c.owner >= 0 && !c.capital && !c.nat && !c.lair && this.nations[c.owner] && !this.nations[c.owner].isThreat);
+        let bsc = -1e9;
+        for (const c of cand) {
+          const o = this.nations[c.owner];
+          const sc = at ? -Math.hypot(c.x - at.x, c.y - at.y) : c.unrest + (1 - o.stability) + r() * 0.6;
+          if (sc > bsc) { bsc = sc; lairCity = c; }
+        }
+        if (!lairCity || (at && Math.hypot(lairCity.x - at.x, lairCity.y - at.y) > 12)) return null;
+        best = lairCity.i;
+      } else if (def.key === 'deep') {
+        // 深淵の門は港町の多い海に開く
+        const coast = this.cities.filter(c => c.owner >= 0 && w.landDist[c.i] === 1);
+        for (let k = 0; k < 900; k++) {
+          const i = (r() * w.N) | 0;
+          if (w.land[i] || this.cityAt[i] >= 0) continue;
+          const sd = w.seaDist[i];
+          if (sd < (at ? 2 : 4) || sd > 12) continue;
+          const x = i % W, y = (i / W) | 0;
+          if (x < 2 || y < 2 || x >= W - 2 || y >= w.H - 2) continue;
+          let sc;
+          if (at) sc = -Math.hypot(x - at.x, y - at.y);
+          else { sc = 0; for (const c of coast) if ((c.x - x) ** 2 + (c.y - y) ** 2 < 1600) sc++; sc += r() * 2; }
+          if (sc > bs) { bs = sc; best = i; }
+        }
+        if (best < 0 || (at && -bs > 14)) return null;
+      } else if (def.key === 'frost' && !at) {
+        // 氷の城は北の果て
+        for (let k = 0; k < 900; k++) {
+          const i = w.landCells[(r() * w.landCells.length) | 0];
+          if (this.cityAt[i] >= 0 || w.landmassSize[w.landmass[i]] < 25) continue;
+          const y = (i / W) | 0;
+          if (this.cities.some(c => (c.x - i % W) ** 2 + (c.y - y) ** 2 < 9)) continue;
+          const sc = w.lat(y) + (this.owner[i] < 0 ? 4 : 0) + r() * 3;
+          if (sc > bs) { bs = sc; best = i; }
+        }
+      }
+      if (best < 0 && at) {
         // 神が指さした場所の近くの陸地
         let bd = 81;
         for (let dy = -8; dy <= 8; dy++) for (let dx = -8; dx <= 8; dx++) {
@@ -1117,18 +1123,37 @@
         }
       }
       if (best < 0) return null;
-      const lair = {
-        id: this.cities.length, x: best % W, y: (best / W) | 0, i: best, name: def.lair, lair: def.key,
-        pop: 6, owner: -1, originRoot: null, defense: 0, unrest: 0, conqueredAt: -99999, besieged: -99, capital: false, dev: 0, built: 0,
-      };
-      // 以前の脅威の拠点は普通の廃墟の街に
-      this.cities.push(lair);
-      this.cityAt[best] = lair.id;
+      let lair;
       const root = TW.Names.general(r);
-      const n = this.createNation(lair, { root, gov: '', manpower: 150, isThreat: true });
-      if (!n) { this.cityAt[best] = -1; this.cities.pop(); return null; }
+      let n;
+      if (lairCity) {
+        // 都市を乗っ取る (元の持ち主を覚えておく)
+        lair = lairCity;
+        const prev = this.nations[lair.owner];
+        lair.preCult = { id: prev.id, uid: prev.uid };
+        lair.origName = lair.name;
+        n = this.createNation(lair, { root, gov: '', manpower: 150, isThreat: true });
+        if (!n) return null;
+        lair.name = def.lair; lair.lair = def.key; lair.pop = Math.max(lair.pop, 4);
+        const W2 = W;
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+          const x = lair.x + dx, y = lair.y + dy;
+          if (x < 0 || y < 0 || x >= W2 || y >= w.H) continue;
+          const i = y * W2 + x;
+          if (w.land[i] && this.owner[i] === prev.id && this.cityAt[i] < 0) this.setOwner(i, n.id);
+        }
+      } else {
+        lair = {
+          id: this.cities.length, x: best % W, y: (best / W) | 0, i: best, name: def.lair, lair: def.key,
+          pop: 6, owner: -1, originRoot: null, defense: 0, unrest: 0, conqueredAt: -99999, besieged: -99, capital: false, dev: 0, built: 0,
+        };
+        this.cities.push(lair);
+        this.cityAt[best] = lair.id;
+        n = this.createNation(lair, { root, gov: '', manpower: 150, isThreat: true });
+        if (!n) { this.cityAt[best] = -1; this.cities.pop(); return null; }
+      }
       n.isThreat = true; n.threat = def.key; n.aggression = 0; n.stability = 1;
-      n.name = def.key === 'demon' ? `魔王${root}の軍勢` : def.key === 'dragon' ? `古竜${root}` : `不死王${root}の軍勢`;
+      n.name = THREAT_NAME[def.key](root);
       n.color = def.color.slice(); n.css = TW.rgbCss(n.color); n.dark = TW.rgbCss(TW.darken(n.color, 0.55));
       lair.capital = true;
       this.giveCity(lair, n.id, false);
@@ -1140,24 +1165,18 @@
         const i = y * W + x;
         if (w.land[i] && this.cityAt[i] < 0) this.setOwner(i, n.id);
       }
-      // 世界は争いをやめ、連合して立ち向かう
+      // 諸国は互いの戦争を続けながら、脅威にも立ち向かう (全国停戦はしない)
       for (const a of alive) {
-        for (const b of alive) {
-          if (a.id >= b.id) continue;
-          if (this.rel[a.id * MAXN + b.id] === 1) { this.setRel(a.id, b.id, 0); this.endOps(op => (op.n === a.id && op.enemy === b.id) || (op.n === b.id && op.enemy === a.id), 'ended'); }
-          this.truce[a.id * MAXN + b.id] = this.truce[b.id * MAXN + a.id] = this.t + TPY * 300;
-        }
         this.setRel(a.id, n.id, 1);
-        a.manpower *= 1.5;
+        a.manpower *= 1.3;
       }
-      if (this.coalition) { this.coalition = null; }
       let worldStr = 0;
       for (const a of alive) worldStr += a.strength;
       this.threat = { nId: n.id, uid: n.uid, type: def.key, def, name: n.name, start: this.t, startYear: this.year(), lair: lair.id, worldStr: Math.max(300, worldStr), lastSpawn: -999, kills: 0 };
       this.lastThreatYear = this.year();
       let place = null, pd = 60 * 60;
       for (const c of this.cities) { if (c === lair || c.wasLair) continue; const d = (c.x - lair.x) ** 2 + (c.y - lair.y) ** 2; if (d < pd) { pd = d; place = c; } }
-      this.addLog('threat', `${def.icon} 世界の脅威 — ${byGod ? '神のいたずらにより、' : ''}${n.name}が${place ? place.name + 'の彼方' : '辺境'}に出現! ${def.desc}。諸国は争いをやめ、世界連合を結成した`, lair, true, [n]);
+      this.addLog('threat', `${def.icon} 世界の脅威 — ${byGod ? '神のいたずらにより、' : ''}${n.name}が${place ? place.name + 'の彼方' : '辺境'}に出現! ${def.desc}。諸国は互いに争いながらも、この脅威に立ち向かう`, lair, true, [n]);
       this.addPoem('threat', { name: n.name, lair: def.lair }, lair, [n]);
       this.effect('threat', lair.x, lair.y, 10);
       if (def.key === 'dragon') {
@@ -1167,9 +1186,21 @@
         d.flying = true; d.mode = 'idle';
       } else {
         // 最初の大軍勢
-        const k = def.key === 'demon' ? 4 : 5;
+        const k = { demon: 4, undead: 5, frost: 3, deep: 4, cult: 2 }[def.key] || 3;
         for (let q = 0; q < k; q++) { const a = this.spawnArmy(n, lair, Math.max(40, this.threat.worldStr * 0.025)); a.mode = 'idle'; }
         this.threat.lastSpawn = this.t;
+        this.threat.lastConvert = this.t;
+      }
+      if (def.key === 'frost') {
+        this.frostN = n.id; this.melting = false;
+        this.frost = new Uint8Array(w.N); this.frostCells = [];
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          const x = lair.x + dx, y = lair.y + dy;
+          if (x < 0 || y < 0 || x >= W || y >= w.H) continue;
+          const i = y * W + x;
+          if (w.land[i] && !this.frost[i]) { this.frost[i] = 1; this.frostCells.push(i); }
+        }
+        this.frostDirty = true;
       }
       return n;
     }
@@ -1201,20 +1232,106 @@
         }
         return;
       }
-      const cap = th.type === 'demon' ? 10 : 12;
-      if (list.length < cap && this.t - th.lastSpawn >= (th.type === 'demon' ? 20 : 24)) {
+      if (th.type === 'frost') this.spreadFrost(th, years);
+      if (th.type === 'cult' && this.t - th.lastConvert >= Math.round(26 / decay)) { th.lastConvert = this.t; this.cultConvert(n, th); }
+      const cap = { demon: 10, undead: 12, frost: 6, deep: 8, cult: 8 }[th.type] || 8;
+      const gap = { demon: 20, undead: 24, frost: 32, deep: 24, cult: 40 }[th.type] || 24;
+      const mul = { demon: 0.028, undead: 0.024, frost: 0.022, deep: 0.024, cult: 0.016 }[th.type] || 0.024;
+      if (list.length < cap && this.t - th.lastSpawn >= gap) {
         th.lastSpawn = this.t;
-        const a = this.spawnArmy(n, lair, Math.max(40, th.worldStr * (th.type === 'demon' ? 0.028 : 0.024)) * decay);
+        const a = this.spawnArmy(n, lair, Math.max(30, th.worldStr * mul) * decay);
         a.mode = 'idle';
       }
       for (const a of list) {
         if (a.mode === 'siege' && this.targetValid(a)) continue;
         if (this.targetValid(a) && a.path && !(a.mode === 'chase' && this.t - a.lastPath > 16)) continue;
-        const tgt = this.pickTarget(n, a.x, a.y, a.i, tcount, a.str);
+        const tgt = th.type === 'deep' ? this.deepTarget(n, a, tcount) : this.pickTarget(n, a.x, a.y, a.i, tcount, a.str);
         if (!tgt) continue;
         a.target = tgt; a.mode = tgt.type === 'army' ? 'chase' : 'attack';
         tcount.set(tgt.type + tgt.id, (tcount.get(tgt.type + tgt.id) || 0) + 1);
         a.path = this.findPath(a.i, this.targetCell(tgt), n.id, 9000); a.pi = 0; a.prog = 0; a.lastPath = this.t;
+      }
+    }
+
+    // 深海の侵略者: 港町と海上の軍だけを狙う
+    deepTarget(n, a, tcount) {
+      const w = this.w;
+      let best = null, bs = 0;
+      for (const c of this.cities) {
+        if (c.owner < 0 || c.owner === n.id || w.landDist[c.i] !== 1) continue;
+        const d = Math.hypot(c.x - a.x, c.y - a.y);
+        if (d > 80) continue;
+        let s = (1 + c.pop * 0.3 + (c.capital ? 1.5 : 0)) / (d + 8);
+        s /= 1 + (tcount.get('city' + c.id) || 0) * 0.8;
+        if (s > bs) { bs = s; best = { type: 'city', id: c.id }; }
+      }
+      for (const e of this.armies) {
+        if (e.n === n.id || w.land[e.i] || !this.atWar(n.id, e.n)) continue;
+        const d = Math.hypot(e.x - a.x, e.y - a.y);
+        if (d > 25) continue;
+        const s = 2.5 / (d + 4);
+        if (s > bs) { bs = s; best = { type: 'army', id: e.id }; }
+      }
+      return best;
+    }
+
+    // 氷の女王: 冬が少しずつ広がる
+    spreadFrost(th, years) {
+      if (!this.frost) return;
+      const w = this.w, W = w.W, H = w.H;
+      const limit = this.landCount * Math.min(0.3, 0.03 + years * 0.014);
+      const fc = this.frostCells;
+      for (let k = 0; k < 40 && fc.length < limit; k++) {
+        const i = fc[(this.rand() * fc.length) | 0];
+        const x = i % W, y = (i / W) | 0, d = (this.rand() * 4) | 0;
+        const j = d === 0 ? (x > 0 ? i - 1 : -1) : d === 1 ? (x < W - 1 ? i + 1 : -1) : d === 2 ? (y > 0 ? i - W : -1) : (y < H - 1 ? i + W : -1);
+        if (j < 0 || !w.land[j] || this.frost[j]) continue;
+        this.frost[j] = 1; fc.push(j); this.frostDirty = true;
+      }
+    }
+
+    // 邪神の教団: 都市の内側から蜂起
+    cultConvert(n, th) {
+      const owned = this.cities.filter(c => c.owner === n.id).length;
+      if (owned >= 14) return;
+      let best = null, bs = -1;
+      for (const c of this.cities) {
+        if (c.owner < 0 || c.owner === n.id || c.capital || c.nat || c.lair) continue;
+        const o = this.nations[c.owner];
+        if (!o || o.isThreat) continue;
+        const s = (1 - o.stability) + c.unrest + 0.2 + this.rand() * 0.8;
+        if (s > bs) { bs = s; best = c; }
+      }
+      if (!best) return;
+      const prev = this.nations[best.owner];
+      best.preCult = { id: prev.id, uid: prev.uid };
+      this.giveCity(best, n.id, true);
+      const W = this.w.W;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const x = best.x + dx, y = best.y + dy;
+        if (x < 0 || y < 0 || x >= W || y >= this.w.H) continue;
+        const i = y * W + x;
+        if (this.w.land[i] && this.owner[i] === prev.id && this.cityAt[i] < 0) this.setOwner(i, n.id);
+      }
+      const a = this.spawnArmy(n, best, Math.max(25, th.worldStr * 0.012));
+      a.mode = 'idle';
+      prev.stability = Math.max(0.05, prev.stability - 0.06);
+      this.addLog('threat', `${prev.name}の${best.name}で邪神の狂信者が蜂起、都市は${n.name}の手に落ちた`, best, best.pop > 5, [n, prev]);
+      this.effect('rebel', best.x, best.y, 4, { color: n.css });
+    }
+
+    // 世界の脅威が去った後の後始末 (毎ティック)
+    tickWorldEffects() {
+      if (this.melting && this.frostCells) {
+        const k = Math.max(4, Math.ceil(this.frostCells.length * 0.03));
+        for (let q = 0; q < k && this.frostCells.length; q++) {
+          const idx = (this.rand() * this.frostCells.length) | 0;
+          const i = this.frostCells[idx];
+          this.frostCells[idx] = this.frostCells[this.frostCells.length - 1]; this.frostCells.pop();
+          this.frost[i] = 0;
+        }
+        this.frostDirty = true;
+        if (!this.frostCells.length) { this.frost = null; this.frostCells = null; this.melting = false; this.frostN = -1; }
       }
     }
 
@@ -1246,13 +1363,30 @@
       this.addLog('threat', `${th.def.icon} ${th.name}、討たる! ${years}年に及ぶ災厄は${hero ? hero.name + (gen ? 'の' + this.genName(gen) : '') + 'によって' : ''}終わりを告げた`, lair, true, hero ? [hero, tn] : [tn]);
       this.addPoem('threatEnd', { name: th.name, hero: hero ? hero.name : '諸国の勇士', gen: gen ? this.genName(gen) : '名もなき兵' }, lair, hero ? [hero] : []);
       this.effect('bless', lair.x, lair.y, 10);
-      // 休戦はしばらく続き、やがて元の争いへ
-      const alive = this.aliveNations();
-      for (const a of alive) for (const b of alive) {
-        if (a.id >= b.id || a.isThreat || b.isThreat) continue;
-        this.truce[a.id * MAXN + b.id] = this.truce[b.id * MAXN + a.id] = this.t + Math.round(TPY * (3 + this.rand() * 6));
+      if (th.type === 'frost') { this.melting = true; this.addLog('threat', '氷の女王が倒れ、凍てついた大地に春が訪れる', lair, false, hero ? [hero] : []); }
+      if (th.type === 'cult') {
+        // 信者たちは目を覚まし、都市は元の国へ戻る
+        const W = this.w.W;
+        let back = 0;
+        for (const c of this.cities) {
+          if (c.owner !== th.nId || c === lair) continue;
+          const pv = c.preCult && this.nations[c.preCult.id];
+          const to = pv && pv.alive && pv.uid === c.preCult.uid ? pv : hero;
+          if (!to) continue;
+          this.giveCity(c, to.id, false);
+          for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+            const x = c.x + dx, y = c.y + dy;
+            if (x < 0 || y < 0 || x >= W || y >= this.w.H) continue;
+            const i = y * W + x;
+            if (this.owner[i] === th.nId && this.cityAt[i] < 0) this.setOwner(i, to.id);
+          }
+          back++;
+        }
+        if (back) this.addLog('threat', `狂信者たちは目を覚まし、${back}の都市が元の国へ戻った`, lair, false, hero ? [hero] : []);
       }
-      lair.lair = null; lair.wasLair = true; lair.name = th.def.lair + '跡'; lair.pop = 2;
+      lair.lair = null; lair.wasLair = true;
+      lair.name = lair.origName || (th.def.lair + '跡');
+      if (!lair.origName) lair.pop = 2;
     }
 
     // ---------- 対覇権の大同盟 ----------
@@ -1358,6 +1492,10 @@
     }
 
     sieges() {
+      const siegeStr = new Map();
+      for (const a of this.armies) {
+        if (a.mode === 'siege' && a.target && a.target.type === 'city' && !a.battle) siegeStr.set(a.target.id, (siegeStr.get(a.target.id) || 0) + a.str);
+      }
       for (const a of this.armies) {
         if (a.mode !== 'siege' || a.str <= 0) continue;
         if (!this.targetValid(a)) { a.mode = 'idle'; a.target = null; continue; }
@@ -1377,6 +1515,23 @@
         const c = this.cities[a.target.id];
         c.besieged = this.t;
         if (c.lair && this.threat && this.t - this.threat.start < TPY * 5) { a.str -= 0.02 * a.str; continue; } // 結界
+        // 兵糧: 包囲されると減り、尽きると降伏
+        if (c.food == null) c.food = 100;
+        if (c.foodT !== this.t && !c.lair) {
+          c.foodT = this.t;
+          c.food -= 0.75 * (1 - Math.min(0.4, c.pop * 0.03));
+          if (c.food <= 0) {
+            c.food = 60;
+            const on = this.nations[c.owner], an = this.nations[a.n];
+            this.addLog('siege', `兵糧が尽き、${on.name}の${c.name}が${an.name}軍に降伏した`, c, c.capital || c.pop > 5, [an, on]);
+            if (a.gen) a.gen.cities++;
+            this.captureCity(c, a.n, true);
+            a.mode = 'idle'; a.target = null;
+            continue;
+          }
+        }
+        // 兵力が足りなければ強攻せず包囲して兵糧攻め
+        if (siegeStr.get(c.id) < c.defense * 1.6) { a.str -= 0.0008 * c.defense; continue; }
         c.defense -= a.str * 0.025 * (0.5 + this.rand()) * this.quality(a.n) * this.genSkill(a.gen);
         a.str -= 0.0035 * c.defense;
         // 城壁が崩れたら市街戦
@@ -1397,7 +1552,7 @@
       }
     }
 
-    captureCity(c, n) {
+    captureCity(c, n, surrender) {
       const w = this.w, W = w.W;
       const old = c.owner;
       const wasCapital = c.capital;
@@ -1406,7 +1561,8 @@
       this.giveCity(c, n, true);
       c.capital = false;
       nn.culture += c.dev * 3;
-      c.dev *= 0.7; c.built = TW.buildingsOf(c.dev).length;
+      c.dev *= surrender ? 0.92 : 0.7; c.built = TW.buildingsOf(c.dev).length;
+      c.food = 70;
       c.defense = this.maxDefense(c) * 0.3;
       nn.citiesTaken++;
       // 周辺を併合
@@ -1763,7 +1919,6 @@
         coastal.get(c.owner).push(c);
       }
       for (const a of alive) {
-        if (this.threat) break;  // 世界の脅威の間は人同士で争わない
         if (!a.alive || a.isThreat || a.wars >= 2 || this.t - a.founded < TPY * 2) continue;
         const ca = capsOf(a);
         for (const b of alive) {

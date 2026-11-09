@@ -124,7 +124,11 @@ TW.HistoryBook = (function () {
       return `<li><span class="wi">${c.icon}</span><div><b>${esc(c.name)}</b> <small>${esc(c.natDesc)}</small><br>${o ? '現在の所有: ' + esc(o.name) : '<span class="dim">いまだ人の手の及ばぬ地</span>'}</div></li>`;
     }).join('');
     const bfs = sim.battlefields.slice().sort((a, b) => b.total - a.total).slice(0, 10);
-    const bfHtml = bfs.map(b => `<li><b>${esc(b.name)}</b>（${b.year}年）— 両軍あわせて${TW.fmtTroops(b.total)}が激突${b.count > 1 ? `、その後も${b.count - 1}度の戦いの舞台に` : ''}</li>`).join('');
+    const bfHtml = bfs.map(b => {
+      const rep = b.reportId && sim.battleReport ? sim.battleReport(b.reportId) : null;
+      const how = rep && rep.winner >= 0 ? `。${rep.sides[rep.winner].nations.map(v => esc(v.name)).join('・')}が勝利 —「${esc(rep.factors[0] || '')}」` : '';
+      return `<li><b>${esc(b.name)}</b>（${b.year}年）— 両軍あわせて${TW.fmtTroops(b.total)}が激突${how}${b.count > 1 ? `、その後も${b.count - 1}度の戦いの舞台に` : ''}</li>`;
+    }).join('');
     const nowHtml = alive.slice(0, 6).map((n, k) => `<li>${k + 1}. <span class="sw" style="background:${n.css}"></span>${esc(n.name)} — 領土${(n.cells / sim.landCount * 100).toFixed(1)}%・都市${n.cityCount}・${TW.ERAS[n.era].name}</li>`).join('');
     const poemsAll = sim.poems.slice(-24).reverse().map(poemHtml).join('') || '<p class="dim">まだ歌は生まれていない。</p>';
     return `<div class="book-inner">
